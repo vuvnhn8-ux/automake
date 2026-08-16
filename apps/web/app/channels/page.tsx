@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import Shell from '@/components/Shell';
 import { api } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
@@ -18,14 +19,31 @@ interface Channel {
   description: string | null;
   isActive: boolean;
   dailyVideoTarget: number;
+  distributionMode: string;
   connectionStatus: string | null;
   tokenStatus: string | null;
   lastCheckedAt: string | null;
-  project: { id: string; name: string };
+  project: { id: string; name: string } | null;
   publishingAccount: { id: string; accountName: string; platform: string; status: string } | null;
   projectAssignments: ProjectAssignment[];
   _count: { series: number; knowledge: number; contents: number };
 }
+
+interface Account {
+  id: string;
+  accountName: string;
+  platform: string;
+  status: string;
+}
+
+interface FacebookPage {
+  id: string;
+  pageId: string;
+  pageName: string;
+  status: string;
+}
+
+const PLATFORMS = ['FACEBOOK', 'YOUTUBE', 'TIKTOK', 'INSTAGRAM', 'X', 'THREADS'];
 
 const PLATFORM_ICON: Record<string, string> = {
   FACEBOOK: 'FB',
@@ -78,9 +96,161 @@ function TestButton({ channel, onDone }: { channel: Channel; onDone: () => void 
   );
 }
 
+// ---------------------------------------------------------------------------
+// Create-channel wizard (platform -> destination -> name -> save)
+// ---------------------------------------------------------------------------
+
+function CreateChannelCard({ onDone }: { onDone: () => void }) {
+  const { t } = useI18n();
+  const [platform, setPlatform] = useState('FACEBOOK');
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [dailyVideoTarget, setDailyVideoTarget] = useState(1);
+  const [autoGenerationEnabled, setAutoGenerationEnabled] = useState(false);
+  const [distributionMode, setDistributionMode] = useState('SAME_CONTENT');
+  const [facebookPageId, setFacebookPageId] = useState('');
+  const [publishingAccountId, setPublishingAccountId] = useState('');
+  const [pages, setPages] = useState<FacebookPage[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    api<{ pages: FacebookPage[] }>('/api/facebook/pages')
+      .then((d) => setPages(d.pages))
+      .catch(() => setPages([]));
+    api<{ accounts: Account[] }>('/api/accounts')
+      .then((d) => setAccounts(d.accounts))
+      .catch(() => setAccounts([]));
+  }, []);
+
+  const matchingAccounts = useMemo(
+    () => accounts.filter((a) => a.platform === platform),
+    [accounts, platform],
+  );
+
+  const create = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    setBusy(true);
+    setError('');
+    try {
+      await api('/api/channels', {
+        method: 'POST',
+        body: {
+          name: name.trim(),
+          platform,
+          description: description.trim() || undefined,
+          dailyVideoTarget,
+          autoGenerationEnabled,
+          distributionMode,
+          ...(facebookPageId ? { facebookPageId } : {}),
+          ...(publishingAccountId ? { publishingAccountId } : {}),
+        },
+      });
+      onDone();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('channels.createFailed'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form onSubmit={(e) => void create(e)} className="card" style={{ marginBottom: 20 }}>
+      <h3 style={{ marginTop: 0 }}>{t('channels.createTitle')}</h3>
+      <div className="muted" style={{ marginBottom: 16 }}>{t('channels.createSubtitle')}</div>
+
+      <div className="field">
+        <label>{t('channels.selectPlatform')}</label>
+        <div className="wrap" style={{ gap: 6 }}>
+          {PLATFORMS.map((p) => (
+            <button
+              key={p}
+              type="button"
+              className={`btn small ${platform === p ? '' : 'secondary'}`}
+              onClick={() => setPlatform(p)}
+            >
+              <span className="badge accent" style={{ marginRight: 6 }}>{PLATFORM_ICON[p]}</span>
+              {p}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="field">
+        <label>{t('channels.channelName')}</label>
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('channels.channelNamePlaceholder')} required />
+      </div>
+
+      <div className="field">
+        <label>{t('channels.linkDestination')}</label>
+        <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>{t('channels.destinationHint')}</div>
+        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+          <select value={publishingAccountId} onChange={(e) => setPublishingAccountId(e.target.value)} style={{ flex: 1, minWidth: 200 }}>
+            <option value="">{t('channels.publishingAccounts')}</option>
+            {matchingAccounts.map((a) => (
+              <option key={a.id} value={a.id}>{a.accountName}</option>
+            ))}
+          </select>
+          {platform === 'FACEBOOK' && (
+            <select value={facebookPageId} onChange={(e) => setFacebookPageId(e.target.value)} style={{ flex: 1, minWidth: 200 }}>
+              <option value="">{t('channels.facebookPages')}</option>
+              {pages.map((p) => (
+                <option key={p.id} value={p.id}>{p.pageName}</option>
+              ))}
+            </select>
+          )}
+        </div>
+      </div>
+
+      <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
+        <div className="field">
+          <label>{t('channels.dailyTarget')}</label>
+          <input
+            type="number"
+            min={0}
+            max={100}
+            value={dailyVideoTarget}
+            onChange={(e) => setDailyVideoTarget(Number(e.target.value))}
+            style={{ width: 90 }}
+          />
+        </div>
+        <div className="field" style={{ flex: 1, minWidth: 220 }}>
+          <label>{t('channels.distribution')}</label>
+          <select value={distributionMode} onChange={(e) => setDistributionMode(e.target.value)}>
+            <option value="SAME_CONTENT">{t('channels.sameContent')}</option>
+            <option value="CHANNEL_VARIANT">{t('channels.channelVariant')}</option>
+          </select>
+        </div>
+      </div>
+
+      <label className="row" style={{ gap: 8, marginBottom: 16, alignItems: 'center' }}>
+        <input type="checkbox" checked={autoGenerationEnabled} onChange={(e) => setAutoGenerationEnabled(e.target.checked)} />
+        <span>{t('channels.autoGeneration')}</span>
+      </label>
+
+      {error && <div className="error" style={{ marginBottom: 12 }}>{error}</div>}
+
+      <div className="row" style={{ gap: 8 }}>
+        <button className="btn" type="submit" disabled={busy || !name.trim()}>
+          {busy ? '…' : t('channels.create')}
+        </button>
+        <button className="btn secondary" type="button" onClick={onDone}>{t('channels.cancel')}</button>
+      </div>
+    </form>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Channels page
+// ---------------------------------------------------------------------------
+
 export default function ChannelsPage() {
   const { t } = useI18n();
   const [channels, setChannels] = useState<Channel[]>([]);
+  const [platformFilter, setPlatformFilter] = useState('ALL');
+  const [showCreate, setShowCreate] = useState(false);
   const [error, setError] = useState('');
 
   const load = () => {
@@ -91,90 +261,125 @@ export default function ChannelsPage() {
 
   useEffect(load, []);
 
-  const platforms = Array.from(new Set(channels.map((c) => c.platform))).sort();
-  const byPlatform = (platform: string) => channels.filter((c) => c.platform === platform);
+  const visible = useMemo(
+    () => (platformFilter === 'ALL' ? channels : channels.filter((c) => c.platform === platformFilter)),
+    [channels, platformFilter],
+  );
 
   return (
     <Shell>
       <div className="spread" style={{ marginBottom: 20 }}>
-        <h2 style={{ margin: 0 }}>{t('channels.title')}</h2>
-        <span className="muted">{t('channels.subtitle')}</span>
+        <div>
+          <h2 style={{ margin: 0 }}>{t('channels.title')}</h2>
+          <div className="muted">{t('channels.subtitle')}</div>
+        </div>
+        <button className="btn" onClick={() => setShowCreate((v) => !v)}>
+          {showCreate ? t('channels.cancel') : `+ ${t('channels.addChannel')}`}
+        </button>
       </div>
+
       {error && <div className="error" style={{ marginBottom: 12 }}>{error}</div>}
 
-      {platforms.map((platform) => (
-        <div key={platform} className="card" style={{ marginBottom: 16 }}>
-          <h3 style={{ marginTop: 0 }}>
-            <span className="badge accent" style={{ marginRight: 8 }}>{PLATFORM_ICON[platform] ?? '•'}</span>
-            {platform}
-          </h3>
-          <table>
-            <thead>
-              <tr>
-                <th>{t('channels.name')}</th>
-                <th>{t('channels.project')}</th>
-                <th>{t('channels.assignedProjects')}</th>
-                <th>{t('channels.account')}</th>
-                <th>{t('channels.contents')}</th>
-                <th>{t('channels.connection')}</th>
-                <th>{t('channels.status')}</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {byPlatform(platform).map((c) => (
-                <tr key={c.id}>
-                  <td>
-                    <strong>{c.name}</strong>
-                    {c.description && (
-                      <div className="muted" style={{ fontSize: 12 }}>{c.description}</div>
-                    )}
-                  </td>
-                  <td className="muted">{c.project.name}</td>
-                  <td className="muted">
-                    {c.projectAssignments.length > 0
-                      ? c.projectAssignments.map((a) => a.project.name).join(', ')
-                      : '—'}
-                  </td>
-                  <td className="muted">{c.publishingAccount ? c.publishingAccount.accountName : '—'}</td>
-                  <td>{c._count.contents}</td>
-                  <td>
-                    <span className={connectionClass(c.connectionStatus)}>
-                      {c.connectionStatus ?? t('channels.neverTested')}
-                    </span>
-                    {c.tokenStatus && (
-                      <div className="muted" style={{ fontSize: 12 }}>{c.tokenStatus}</div>
-                    )}
-                    {c.lastCheckedAt && (
-                      <div className="muted" style={{ fontSize: 12 }}>
-                        {t('channels.checkedAt', { date: new Date(c.lastCheckedAt).toLocaleString() })}
-                      </div>
-                    )}
-                  </td>
-                  <td>
-                    <span className={`badge ${c.isActive ? 'ok' : 'warn'}`}>
-                      {c.isActive ? t('channels.statusActive') : t('channels.statusDisabled')}
-                    </span>
-                  </td>
-                  <td>
-                    <TestButton channel={c} onDone={load} />
-                  </td>
-                </tr>
-              ))}
-              {byPlatform(platform).length === 0 && (
-                <tr>
-                  <td colSpan={8} className="muted">{t('channels.noChannels')}</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      ))}
+      {showCreate && <CreateChannelCard onDone={() => { setShowCreate(false); load(); }} />}
 
-      {channels.length === 0 && (
-        <div className="card muted">
-          {t('channels.empty')}
+      {channels.length === 0 && !showCreate ? (
+        <div className="card">
+          <div className="muted" style={{ marginBottom: 12 }}>{t('channels.empty')}</div>
+          <button className="btn" onClick={() => setShowCreate(true)}>+ {t('channels.addChannel')}</button>
         </div>
+      ) : (
+        <>
+          <div className="wrap" style={{ gap: 6, marginBottom: 16 }}>
+            <button
+              className={`btn small ${platformFilter === 'ALL' ? '' : 'secondary'}`}
+              onClick={() => setPlatformFilter('ALL')}
+            >
+              {t('channels.allPlatforms')}
+            </button>
+            {PLATFORMS.map((p) => (
+              <button
+                key={p}
+                className={`btn small ${platformFilter === p ? '' : 'secondary'}`}
+                onClick={() => setPlatformFilter(p)}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+
+          <div className="card">
+            <table>
+              <thead>
+                <tr>
+                  <th>{t('channels.name')}</th>
+                  <th>{t('channels.platform')}</th>
+                  <th>{t('channels.destination')}</th>
+                  <th>{t('channels.assignedProjects')}</th>
+                  <th>{t('channels.contents')}</th>
+                  <th>{t('channels.connection')}</th>
+                  <th>{t('channels.status')}</th>
+                  <th>{t('channels.actions')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visible.map((c) => (
+                  <tr key={c.id}>
+                    <td>
+                      <Link href={`/channels/${c.id}`}>
+                        <strong>{c.name}</strong>
+                      </Link>
+                      {c.description && (
+                        <div className="muted" style={{ fontSize: 12 }}>{c.description}</div>
+                      )}
+                    </td>
+                    <td>
+                      <span className="badge accent" style={{ marginRight: 6 }}>{PLATFORM_ICON[c.platform] ?? '•'}</span>
+                      <span className="muted">{c.platform}</span>
+                    </td>
+                    <td className="muted">
+                      {c.publishingAccount ? c.publishingAccount.accountName : t('channels.noDestination')}
+                    </td>
+                    <td className="muted">
+                      {c.projectAssignments.length > 0
+                        ? c.projectAssignments.map((a) => a.project.name).join(', ')
+                        : '—'}
+                    </td>
+                    <td>{c._count.contents}</td>
+                    <td>
+                      <span className={connectionClass(c.connectionStatus)}>
+                        {c.connectionStatus ?? t('channels.neverTested')}
+                      </span>
+                      {c.tokenStatus && (
+                        <div className="muted" style={{ fontSize: 12 }}>{c.tokenStatus}</div>
+                      )}
+                      {c.lastCheckedAt && (
+                        <div className="muted" style={{ fontSize: 12 }}>
+                          {t('channels.checkedAt', { date: new Date(c.lastCheckedAt).toLocaleString() })}
+                        </div>
+                      )}
+                    </td>
+                    <td>
+                      <span className={`badge ${c.isActive ? 'ok' : 'warn'}`}>
+                        {c.isActive ? t('channels.statusActive') : t('channels.statusDisabled')}
+                      </span>
+                    </td>
+                    <td>
+                      <div className="wrap" style={{ gap: 6 }}>
+                        <Link href={`/channels/${c.id}`} className="btn small secondary">{t('channels.details')}</Link>
+                        <TestButton channel={c} onDone={load} />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {visible.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="muted">{t('channels.noChannels')}</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </Shell>
   );

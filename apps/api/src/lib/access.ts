@@ -1,9 +1,13 @@
 import { prisma } from '@avf/database';
+import { channelOwnershipWhere } from './channels.js';
 
 /**
  * Ownership-chain access helpers. Every lookup walks the full
  * user -> project -> channel -> series -> topic / knowledge chain so that
  * multi-channel isolation is enforced in one place.
+ *
+ * Channels live in a global, user-owned registry: ownership is the user id
+ * directly (new rows) or a creator project the user owns (legacy rows).
  */
 
 export async function getProject(userId: string, projectId: string) {
@@ -12,7 +16,7 @@ export async function getProject(userId: string, projectId: string) {
 
 export async function getChannel(userId: string, channelId: string) {
   return prisma.publishingChannel.findFirstOrThrow({
-    where: { id: channelId, project: { userId } },
+    where: { id: channelId, ...channelOwnershipWhere(userId) },
     include: {
       facebookPage: { select: { pageId: true, accessTokenEnc: true } },
       publishingAccount: { select: { id: true, accountName: true, platform: true, credentials: true, metadata: true } },
@@ -24,7 +28,10 @@ export async function getSeries(userId: string, seriesId: string) {
   return prisma.contentSeries.findFirstOrThrow({
     where: {
       id: seriesId,
-      OR: [{ channel: { project: { userId } } }, { campaign: { project: { userId } } }],
+      OR: [
+        { channel: { ...channelOwnershipWhere(userId) } },
+        { campaign: { project: { userId } } },
+      ],
     },
     include: { channel: { select: { projectId: true } }, campaign: { select: { projectId: true } } },
   });
@@ -44,7 +51,7 @@ export async function getSeriesTopic(userId: string, seriesId: string, topicId: 
 
 export async function getKnowledge(userId: string, knowledgeId: string) {
   return prisma.channelKnowledge.findFirstOrThrow({
-    where: { id: knowledgeId, channel: { project: { userId } } },
+    where: { id: knowledgeId, channel: { ...channelOwnershipWhere(userId) } },
   });
 }
 
@@ -74,6 +81,13 @@ export async function getCampaignKnowledge(userId: string, knowledgeId: string) 
 
 export async function getCampaignSeries(userId: string, campaignId: string, seriesId: string) {
   return prisma.contentSeries.findFirstOrThrow({
-    where: { id: seriesId, campaignId, OR: [{ channel: { project: { userId } } }, { campaign: { project: { userId } } }] },
+    where: {
+      id: seriesId,
+      campaignId,
+      OR: [
+        { channel: { ...channelOwnershipWhere(userId) } },
+        { campaign: { project: { userId } } },
+      ],
+    },
   });
 }

@@ -13,21 +13,15 @@ import { createPlatformProvider, FacebookTokenCipher } from '@avf/social';
 import { recordProviderUsage } from '@avf/config';
 import { parse, parseId } from '../lib/validate.js';
 import { getAuthUser } from '../plugins/auth.js';
-import { getChannel, getSeries, getKnowledge, getSeriesTopic } from '../lib/access.js';
+import { getChannel, getSeries, getKnowledge, getSeriesTopic, getProject } from '../lib/access.js';
 import { createContentRecord, enqueueContentGeneration } from '../services/pipeline.js';
-
-const CreateChannelSchema = z.object({
-  name: z.string().min(1).max(200),
-  platform: ChannelPlatformSchema.default('FACEBOOK'),
-  description: z.string().max(2000).optional(),
-  dailyVideoTarget: z.number().int().min(0).max(100).default(1),
-  autoGenerationEnabled: z.boolean().default(false),
-  isActive: z.boolean().default(true),
-  facebookPageId: z.string().uuid().nullable().optional(),
-  publishingAccountId: z.string().uuid().nullable().optional(),
-});
-
-const UpdateChannelSchema = CreateChannelSchema.partial();
+import {
+  CreateChannelSchema,
+  UpdateChannelSchema,
+  ConnectChannelSchema,
+  channelOwnershipWhere,
+  toPublicChannel,
+} from '../lib/channels.js';
 
 const UpsertProfileSchema = z.object({
   description: z.string().max(5000).optional(),
@@ -83,12 +77,14 @@ const CreateKnowledgeSchema = z.object({
 });
 
 const GenerateSchema = z.object({
+  projectId: z.string().uuid().optional(),
   seriesId: z.string().uuid().optional(),
   topicIds: z.array(z.string().uuid()).min(1).max(20).optional(),
   count: z.number().int().min(1).max(20).default(1),
 });
 
 const GenerateTopicSchema = z.object({
+  projectId: z.string().uuid().optional(),
   seriesId: z.string().uuid().optional(),
   count: z.number().int().min(1).max(20).default(10),
   language: z.string().min(2).max(16).optional(),
@@ -114,6 +110,31 @@ const seriesInclude = {
   _count: { select: { topics: true, contents: true, schedules: true } },
 } as const;
 
+/**
+ * Channels are global, so channel-level generation needs an explicit project
+ * context. Uses the caller's project id when provided, otherwise falls back to
+ * the channel's creator project (legacy) or its first enabled assignment.
+ */
+async function channelGenerationProject(
+  authId: string,
+  channel: { id: string; projectId: string | null },
+  requested?: string,
+): Promise<{ projectId: string } | { error: string; message: string }> {
+  if (requested) {
+    const project = await prisma.project.findFirst({ where: { id: requested, userId: authId } });
+    if (!project) return { error: 'not_found', message: 'Project not found' };
+    return { projectId: requested };
+  }
+  if (channel.projectId) return { projectId: channel.projectId };
+  const assignment = await prisma.projectChannelAssignment.findFirst({
+    where: { publishingChannelId: channel.id, enabled: true },
+    orderBy: { priority: 'asc' },
+    select: { projectId: true },
+  });
+  if (assignment) return { projectId: assignment.projectId };
+  return { error: 'no_project', message: 'Assign this channel to a project before generating content' };
+}
+
 export async function channelRoutes(app: FastifyInstance): Promise<void> {
   const container = app.container;
 
@@ -121,11 +142,16 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
   // Channels
   // -------------------------------------------------------------------------
 
-  // Cross-project listing (all channels across the user's projects).
+  // Global channel registry listing (user-owned, optional platform filter).
   app.get('/channels', async (request) => {
     const auth = getAuthUser(request);
+    const query = request.query as { platform?: string };
+    const platform = query.platform ? parse(ChannelPlatformSchema, query.platform) : undefined;
     const channels = await prisma.publishingChannel.findMany({
-      where: { project: { userId: auth.id } },
+      where: {
+        ...channelOwnershipWhere(auth.id),
+        ...(platform ? { platform } : {}),
+      },
       orderBy: { createdAt: 'asc' },
       include: {
         project: { select: { id: true, name: true } },
@@ -135,6 +161,39 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
       },
     });
     return { channels };
+  });
+
+  // Create a channel in the global registry. Projects are never required.
+  app.post('/channels', async (request, reply) => {
+    const auth = getAuthUser(request);
+    const body = parse(CreateChannelSchema, request.body);
+    const { facebookPageId, publishingAccountId, distributionMode, ...rest } = body;
+    if (facebookPageId) {
+      const page = await prisma.facebookPage.findFirst({ where: { id: facebookPageId, userId: auth.id } });
+      if (!page) {
+        return reply.code(404).send({ error: 'not_found', message: 'Facebook page not found' });
+      }
+    }
+    if (publishingAccountId) {
+      const account = await prisma.publishingAccount.findFirst({
+        where: { id: publishingAccountId, project: { userId: auth.id } },
+      });
+      if (!account) {
+        return reply.code(404).send({ error: 'not_found', message: 'Publishing account not found' });
+      }
+    }
+    const channel = await prisma.publishingChannel.create({
+      data: {
+        userId: auth.id,
+        projectId: null,
+        distributionMode,
+        ...rest,
+        ...(facebookPageId ? { facebookPageId } : {}),
+        ...(publishingAccountId ? { publishingAccountId } : {}),
+      },
+      include: channelDetailInclude,
+    });
+    return reply.code(201).send({ channel });
   });
 
   // Test the connection/credentials of a channel and record the outcome.
@@ -205,57 +264,38 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
+  // Channels selected by a project (selection only — projects never create).
   app.get('/projects/:projectId/channels', async (request) => {
     const auth = getAuthUser(request);
     const projectId = parseId((request.params as { projectId: string }).projectId);
-    await prisma.project.findFirstOrThrow({ where: { id: projectId, userId: auth.id } });
+    await getProject(auth.id, projectId);
     const channels = await prisma.publishingChannel.findMany({
-      where: { projectId },
+      where: { projectAssignments: { some: { projectId } } },
       orderBy: { createdAt: 'asc' },
       include: channelDetailInclude,
     });
     return { channels };
   });
 
-  app.post('/projects/:projectId/channels', async (request, reply) => {
-    const auth = getAuthUser(request);
-    const projectId = parseId((request.params as { projectId: string }).projectId);
-    await prisma.project.findFirstOrThrow({ where: { id: projectId, userId: auth.id } });
-    const body = parse(CreateChannelSchema, request.body);
-    const { facebookPageId, publishingAccountId, ...rest } = body;
-    if (facebookPageId) {
-      const page = await prisma.facebookPage.findFirst({ where: { id: facebookPageId, userId: auth.id } });
-      if (!page) {
-        return reply.code(404).send({ error: 'not_found', message: 'Facebook page not found' });
-      }
-    }
-    if (publishingAccountId) {
-      const account = await prisma.publishingAccount.findFirst({
-        where: { id: publishingAccountId, projectId, project: { userId: auth.id } },
-      });
-      if (!account) {
-        return reply.code(404).send({ error: 'not_found', message: 'Publishing account not found' });
-      }
-    }
-    const channel = await prisma.publishingChannel.create({
-      data: {
-        projectId,
-        ...rest,
-        ...(facebookPageId ? { facebookPageId } : {}),
-        ...(publishingAccountId ? { publishingAccountId } : {}),
-      },
-      include: channelDetailInclude,
-    });
-    return reply.code(201).send({ channel });
-  });
-
   app.get('/channels/:id', async (request, reply) => {
     const auth = getAuthUser(request);
     const id = parseId((request.params as { id: string }).id);
     const channel = await prisma.publishingChannel.findFirst({
-      where: { id, project: { userId: auth.id } },
+      where: { id, ...channelOwnershipWhere(auth.id) },
       include: {
         contentProfile: true,
+        facebookPage: { select: { id: true, pageId: true, pageName: true, status: true, tokenExpiresAt: true, accessTokenEnc: true } },
+        publishingAccount: { select: { id: true, accountName: true, platform: true, status: true, metadata: true, credentials: true } },
+        projectAssignments: {
+          orderBy: { priority: 'asc' as const },
+          include: { project: { select: { id: true, name: true } } },
+        },
+        schedules: { orderBy: { createdAt: 'asc' as const } },
+        publishingJobs: {
+          orderBy: { createdAt: 'desc' as const },
+          take: 10,
+          include: { video: { select: { id: true, content: { select: { id: true, title: true } } } } },
+        },
         series: { orderBy: { priority: 'asc' as const }, include: seriesInclude },
         knowledge: { where: { isActive: true }, orderBy: { createdAt: 'desc' as const } },
         _count: { select: { contents: true, schedules: true } },
@@ -264,7 +304,18 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
     if (!channel) {
       return reply.code(404).send({ error: 'not_found', message: 'Channel not found' });
     }
-    return { channel };
+    // Never expose encrypted credentials — only a masked preview.
+    return {
+      channel: {
+        ...channel,
+        facebookPage: channel.facebookPage
+          ? toPublicChannel(channel.facebookPage)
+          : null,
+        publishingAccount: channel.publishingAccount
+          ? toPublicChannel(channel.publishingAccount)
+          : null,
+      },
+    };
   });
 
   app.patch('/channels/:id', async (request, reply) => {
@@ -302,6 +353,58 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
     await getChannel(auth.id, id);
     await prisma.publishingChannel.delete({ where: { id } });
     return reply.code(204).send();
+  });
+
+  // Link a destination (Facebook page or publishing account) to a channel.
+  app.post('/channels/:id/connect', async (request, reply) => {
+    const auth = getAuthUser(request);
+    const id = parseId((request.params as { id: string }).id);
+    await getChannel(auth.id, id);
+    const body = parse(ConnectChannelSchema, request.body);
+    if (body.facebookPageId) {
+      const page = await prisma.facebookPage.findFirst({ where: { id: body.facebookPageId, userId: auth.id } });
+      if (!page) {
+        return reply.code(404).send({ error: 'not_found', message: 'Facebook page not found' });
+      }
+    }
+    if (body.publishingAccountId) {
+      const account = await prisma.publishingAccount.findFirst({
+        where: { id: body.publishingAccountId, project: { userId: auth.id } },
+      });
+      if (!account) {
+        return reply.code(404).send({ error: 'not_found', message: 'Publishing account not found' });
+      }
+    }
+    const data: Prisma.PublishingChannelUpdateInput = {
+      ...(body.facebookPageId !== undefined
+        ? { facebookPage: body.facebookPageId ? { connect: { id: body.facebookPageId } } : { disconnect: true } }
+        : {}),
+      ...(body.publishingAccountId !== undefined
+        ? { publishingAccount: body.publishingAccountId ? { connect: { id: body.publishingAccountId } } : { disconnect: true } }
+        : {}),
+    };
+    const channel = await prisma.publishingChannel.update({ where: { id }, data, include: channelDetailInclude });
+    return { channel };
+  });
+
+  // Unlink the destination. Credentials are never deleted — the channel just
+  // stops routing to them until re-connected.
+  app.post('/channels/:id/disconnect', async (request, reply) => {
+    const auth = getAuthUser(request);
+    const id = parseId((request.params as { id: string }).id);
+    await getChannel(auth.id, id);
+    const channel = await prisma.publishingChannel.update({
+      where: { id },
+      data: {
+        facebookPageId: null,
+        publishingAccountId: null,
+        connectionStatus: 'DISCONNECTED',
+        tokenStatus: null,
+        lastCheckedAt: new Date(),
+      },
+      include: channelDetailInclude,
+    });
+    return { channel };
   });
 
   // -------------------------------------------------------------------------
@@ -365,7 +468,10 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
     const auth = getAuthUser(request);
     const id = parseId((request.params as { id: string }).id);
     const series = await prisma.contentSeries.findFirst({
-      where: { id, channel: { project: { userId: auth.id } } },
+      where: {
+        id,
+        OR: [{ channel: { ...channelOwnershipWhere(auth.id) } }, { campaign: { project: { userId: auth.id } } }],
+      },
       include: {
         ...seriesInclude,
         topics: { where: { isActive: true }, orderBy: { createdAt: 'desc' as const } },
@@ -416,9 +522,21 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
     const id = parseId((request.params as { id: string }).id);
     const series = await getSeries(auth.id, id);
     const body = parse(CreateSeriesTopicSchema, request.body);
+    let projectId = series.channel?.projectId ?? series.campaign?.projectId ?? '';
+    if (!projectId && series.channelId) {
+      const assignment = await prisma.projectChannelAssignment.findFirst({
+        where: { publishingChannelId: series.channelId, enabled: true },
+        orderBy: { priority: 'asc' },
+        select: { projectId: true },
+      });
+      projectId = assignment?.projectId ?? '';
+    }
+    if (!projectId) {
+      return reply.code(400).send({ error: 'no_project', message: 'Assign the channel to a project before creating topics' });
+    }
     const topic = await prisma.topic.create({
       data: {
-        projectId: series.channel?.projectId ?? series.campaign?.projectId ?? '',
+        projectId,
         seriesId: id,
         ...body,
         source: TopicSourceSchema.enum.MANUAL,
@@ -482,6 +600,11 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
     const id = parseId((request.params as { id: string }).id);
     const channel = await getChannel(auth.id, id);
     const body = parse(GenerateSchema, request.body);
+    const resolvedProject = await channelGenerationProject(auth.id, channel, body.projectId);
+    if ('error' in resolvedProject) {
+      return reply.code(resolvedProject.error === 'not_found' ? 404 : 400).send(resolvedProject);
+    }
+    const projectId = resolvedProject.projectId;
 
     let seriesId = body.seriesId;
     if (seriesId) await getSeries(auth.id, seriesId);
@@ -516,7 +639,7 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
 
     const results = [];
     for (const item of picked) {
-      const contentId = await createContentRecord(auth.id, channel.projectId, {
+      const contentId = await createContentRecord(auth.id, projectId, {
         topicId: item.topicId,
         channelId: id,
         seriesId,
@@ -524,7 +647,7 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
       });
       await enqueueContentGeneration(container.queue, {
         contentId,
-        projectId: channel.projectId,
+        projectId,
         topicId: item.topicId,
         channelId: id,
         seriesId,
@@ -544,6 +667,11 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
     const id = parseId((request.params as { id: string }).id);
     const channel = await getChannel(auth.id, id);
     const body = parse(GenerateTopicSchema, request.body);
+    const resolvedProject = await channelGenerationProject(auth.id, channel, body.projectId);
+    if ('error' in resolvedProject) {
+      return reply.code(resolvedProject.error === 'not_found' ? 404 : 400).send(resolvedProject);
+    }
+    const projectId = resolvedProject.projectId;
 
     let seriesId = body.seriesId;
     if (seriesId) await getSeries(auth.id, seriesId);
@@ -603,7 +731,7 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
       }
       const topic = await prisma.topic.create({
         data: {
-          projectId: channel.projectId,
+          projectId,
           seriesId,
           name: candidate.title,
           description: candidate.description,

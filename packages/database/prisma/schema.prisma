@@ -202,6 +202,13 @@ enum ChannelPlatform {
   OTHER
 }
 
+// How a channel receives a finished video: the same asset/content everywhere,
+// or a per-channel localized variant generated for this destination.
+enum ChannelDistributionMode {
+  SAME_CONTENT
+  CHANNEL_VARIANT
+}
+
 enum TopicSource {
   MANUAL
   AI
@@ -240,6 +247,7 @@ model User {
   facebookPages FacebookPage[]
   sessions      Session[]
   generationLogs GenerationLog[]
+  channels      PublishingChannel[]
 }
 
 model Session {
@@ -296,6 +304,7 @@ model Project {
   campaigns     ContentCampaign[]
   accounts      PublishingAccount[]
   channelAssignments ProjectChannelAssignment[]
+  publishingJobs PublishingJob[]
 
   @@index([userId])
 }
@@ -320,7 +329,8 @@ model PublishingAccount {
 
 model PublishingChannel {
   id                    String          @id @default(uuid()) @db.Uuid
-  projectId             String          @db.Uuid
+  userId                String?         @db.Uuid
+  projectId             String?         @db.Uuid
   name                  String
   platform              ChannelPlatform @default(FACEBOOK)
   description           String?
@@ -331,12 +341,14 @@ model PublishingChannel {
   connectionStatus      ChannelConnectionStatus @default(UNKNOWN)
   tokenStatus           String?
   lastCheckedAt         DateTime?
+  distributionMode      ChannelDistributionMode @default(SAME_CONTENT)
   facebookPageId        String?         @db.Uuid
   publishingAccountId   String?         @db.Uuid
   createdAt             DateTime        @default(now())
   updatedAt             DateTime        @updatedAt
 
-  project          Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user             User?                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project          Project?              @relation(fields: [projectId], references: [id], onDelete: SetNull)
   facebookPage     FacebookPage?          @relation(fields: [facebookPageId], references: [id], onDelete: SetNull)
   publishingAccount PublishingAccount?    @relation(fields: [publishingAccountId], references: [id], onDelete: SetNull)
   contentProfile   ChannelContentProfile?
@@ -350,14 +362,16 @@ model PublishingChannel {
   assignments      CampaignChannelAssignment[]
   projectAssignments ProjectChannelAssignment[]
 
+  @@index([userId])
   @@index([projectId])
   @@index([facebookPageId])
   @@index([publishingAccountId])
 }
 
-// A channel is owned by the project that created it but can be *selected* by
-// any other project of the same user. Selection is per-project (enabled flag),
-// and channel-specific overrides live on the assignment row.
+// Channels live in a global, user-owned registry (/channels). Projects never
+// create channels — they only *select* existing ones via this assignment row.
+// Selection is per-project (enabled flag), and channel-specific overrides live
+// on the assignment row.
 model ProjectChannelAssignment {
   id                     String   @id @default(uuid()) @db.Uuid
   projectId              String   @db.Uuid
@@ -508,6 +522,7 @@ model Content {
   scenes  Scene[]
   video   Video?
   mediaAssets MediaAsset[]
+  publishingJobs PublishingJob[]
 
   @@index([projectId])
   @@index([campaignId])
@@ -647,10 +662,13 @@ model RenderJob {
 model PublishingJob {
   id            String          @id @default(uuid()) @db.Uuid
   videoId       String          @db.Uuid
+  projectId     String?         @db.Uuid
+  contentId     String?         @db.Uuid
   campaignId    String?         @db.Uuid
   facebookPageId String?        @db.Uuid
   channelId     String?         @db.Uuid
   seriesId      String?         @db.Uuid
+  platform      ChannelPlatform?
   scheduledAt   DateTime?
   status        PublishingStatus @default(PENDING)
   facebookPostId String?
@@ -662,6 +680,8 @@ model PublishingJob {
   updatedAt     DateTime        @updatedAt
 
   video        Video        @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  project      Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  content      Content?     @relation(fields: [contentId], references: [id], onDelete: SetNull)
   campaign     ContentCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
   facebookPage FacebookPage? @relation(fields: [facebookPageId], references: [id], onDelete: SetNull)
   channel      PublishingChannel? @relation(fields: [channelId], references: [id], onDelete: SetNull)
@@ -669,6 +689,8 @@ model PublishingJob {
   analytics    Analytics[]
 
   @@index([videoId])
+  @@index([projectId])
+  @@index([contentId])
   @@index([status])
   @@index([campaignId])
   @@index([channelId])

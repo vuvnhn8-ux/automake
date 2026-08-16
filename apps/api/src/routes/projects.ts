@@ -4,6 +4,7 @@ import { prisma } from '@avf/database';
 import { PublishingModeSchema, VideoTemplateSchema } from '@avf/shared';
 import { parse, parseId } from '../lib/validate.js';
 import { getAuthUser } from '../plugins/auth.js';
+import { channelOwnershipWhere } from '../lib/channels.js';
 
 const CreateProjectSchema = z.object({
   name: z.string().min(1).max(200),
@@ -227,10 +228,10 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
 
     const channelIds = body.assignments.map((a) => a.publishingChannelId);
     const channels = await prisma.publishingChannel.findMany({
-      where: { id: { in: channelIds }, project: { userId: auth.id } },
+      where: { id: { in: channelIds }, ...channelOwnershipWhere(auth.id) },
     });
     if (channels.length !== channelIds.length) {
-      return reply.code(403).send({ error: 'forbidden', message: 'Channel not in your projects' });
+      return reply.code(403).send({ error: 'forbidden', message: 'Channel not in your channel registry' });
     }
 
     await prisma.$transaction([

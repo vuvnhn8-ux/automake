@@ -89,7 +89,7 @@ interface GlobalChannel {
   platform: string;
   connectionStatus: string | null;
   isActive: boolean;
-  project: { id: string; name: string };
+  project: { id: string; name: string } | null;
 }
 
 interface ProviderOption {
@@ -922,7 +922,6 @@ function ChannelsTab({ project, onSaved, onNotice, onError }: { project: Project
             <tr>
               <th>{t('pct.channel')}</th>
               <th>{t('pct.platform')}</th>
-              <th>{t('pct.ownerProject')}</th>
               <th>{t('pct.connection')}</th>
               <th>{t('pct.enabled')}</th>
               <th>{t('pct.priority')}</th>
@@ -938,7 +937,6 @@ function ChannelsTab({ project, onSaved, onNotice, onError }: { project: Project
                     {!c.isActive && <span className="badge warn" style={{ marginLeft: 8 }}>{t('pct.disabled')}</span>}
                   </td>
                   <td className="muted">{c.platform}</td>
-                  <td className="muted">{c.project.name}</td>
                   <td>
                     <span className={`badge ${c.connectionStatus === 'CONNECTED' ? 'ok' : 'warn'}`}>
                       {c.connectionStatus ?? t('pct.neverTested')}
@@ -962,7 +960,7 @@ function ChannelsTab({ project, onSaved, onNotice, onError }: { project: Project
             })}
             {channels.length === 0 && (
               <tr>
-                <td colSpan={6} className="muted">{t('pct.noGlobalChannels')}</td>
+                <td colSpan={5} className="muted">{t('pct.noGlobalChannels')}</td>
               </tr>
             )}
           </tbody>

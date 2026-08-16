@@ -124,15 +124,18 @@ export async function handleQualityCheck(
         if (campaign && campaign.status === 'ACTIVE' && automation.autoPublish) {
           const assignments = await prisma.campaignChannelAssignment.findMany({
             where: { campaignId: campaign.id, enabled: true },
-            include: { channel: { select: { id: true, isActive: true } } },
+            include: { channel: { select: { id: true, isActive: true, platform: true } } },
           });
           for (const assignment of assignments) {
             if (!assignment.channel.isActive) continue;
             const publishingJob = await prisma.publishingJob.create({
               data: {
                 videoId,
+                projectId: video.projectId,
+                contentId: video.contentId,
                 campaignId: campaign.id,
                 channelId: assignment.publishingChannelId,
+                platform: assignment.channel.platform,
                 facebookPageId: null,
                 descriptionOverride: assignment.captionInstructions ?? null,
                 status: 'PENDING',
@@ -153,12 +156,19 @@ export async function handleQualityCheck(
         // the same video.
         const assignments = await prisma.projectChannelAssignment.findMany({
           where: { projectId, enabled: true, channel: { isActive: true } },
-          select: { publishingChannelId: true },
+          select: { publishingChannelId: true, channel: { select: { id: true, platform: true } } },
         });
         if (assignments.length > 0) {
           for (const assignment of assignments) {
             const publishingJob = await prisma.publishingJob.create({
-              data: { videoId, channelId: assignment.publishingChannelId, status: 'PENDING' },
+              data: {
+                videoId,
+                projectId: video.projectId,
+                contentId: video.contentId,
+                channelId: assignment.publishingChannelId,
+                platform: assignment.channel.platform,
+                status: 'PENDING',
+              },
             });
             await ctx.queue.add('publish-video', {
               publishingJobId: publishingJob.id,
@@ -175,7 +185,14 @@ export async function handleQualityCheck(
           : null;
         if (page) {
           const publishingJob = await prisma.publishingJob.create({
-            data: { videoId, facebookPageId: page.id, status: 'PENDING' },
+            data: {
+              videoId,
+              projectId: video.projectId,
+              contentId: video.contentId,
+              facebookPageId: page.id,
+              platform: 'FACEBOOK',
+              status: 'PENDING',
+            },
           });
           await ctx.queue.add('publish-video', {
             publishingJobId: publishingJob.id,
