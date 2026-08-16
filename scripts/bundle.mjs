@@ -30,6 +30,12 @@ await build({
   sourcemap: true,
   minify: process.env.NODE_ENV === 'production',
   logLevel: 'info',
+  // Some CJS deps (e.g. avvio used by Fastify v5) call require() dynamically.
+  // In ESM output that hits esbuild's __require shim, which throws. Defining
+  // require via createRequire lets those calls resolve at runtime.
+  banner: {
+    js: 'import { createRequire as __avfCreateRequire } from "node:module"; var require = __avfCreateRequire(import.meta.url);',
+  },
   external: [
     // Runtime-native / .node-embedded modules that must not be inlined.
     '@prisma/client',

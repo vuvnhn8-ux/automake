@@ -29,7 +29,21 @@ export const authPlugin = fp(async (app) => {
 
   app.addHook('preHandler', async (request, reply) => {
     const url = request.url;
-    if (url.startsWith('/api/auth/') || url.startsWith('/api/facebook/oauth/callback')) {
+    // Public endpoints that do not need a Bearer token. Note: /api/auth/me is
+    // intentionally NOT in this list (it must be authenticated).
+    const publicPaths = [
+      '/api/auth/login',
+      '/api/auth/register',
+      '/api/auth/refresh',
+      '/api/auth/logout',
+    ];
+    if (
+      url === '/health' ||
+      url.startsWith('/health') ||
+      url.startsWith('/files/') ||
+      publicPaths.includes(url) ||
+      url.startsWith('/api/facebook/oauth/callback')
+    ) {
       return;
     }
     const header = request.headers.authorization;
