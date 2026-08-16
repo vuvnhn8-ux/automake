@@ -118,6 +118,9 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-change-me-postgres-password}@db:5432/${POSTGRES_DB:-avf}
       REDIS_URL: redis://redis:6379
       QUEUE_DRIVER: bullmq
+      JWT_SECRET: ${JWT_SECRET:-change-me-jwt-secret-at-least-32-chars}
+      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
+      JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-7d}
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-1}
       WORKER_TEMP_DIR: ${WORKER_TEMP_DIR:-/data/worker-tmp}
       WORKER_HEARTBEAT_INTERVAL_MS: ${WORKER_HEARTBEAT_INTERVAL_MS:-15000}
