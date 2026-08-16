@@ -1,0 +1,61 @@
+{
+  "name": "ai-video-factory",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI Video Factory - automated AI video generation and Facebook publishing platform",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n api,worker,web -c cyan,magenta,green \"npm:dev:api\" \"npm:dev:worker\" \"npm:dev:web\"",
+    "dev:api": "tsx watch apps/api/src/index.ts",
+    "dev:worker": "tsx watch apps/worker/src/index.ts",
+    "dev:web": "next dev apps/web",
+    "build": "npm run build:packages && npm run build:api && npm run build:worker && npm run build:web",
+    "build:packages": "tsc -b tsconfig.json",
+    "build:api": "node scripts/bundle.mjs api",
+    "build:worker": "node scripts/bundle.mjs worker",
+    "build:web": "next build apps/web",
+    "typecheck": "tsc -b tsconfig.json --pretty false",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "format": "prettier --write \"**/*.{ts,tsx,json,md,css}\"",
+    "db:generate": "prisma generate --schema packages/database/prisma/schema.prisma",
+    "db:validate": "prisma validate --schema packages/database/prisma/schema.prisma",
+    "db:push": "prisma db push --schema packages/database/prisma/schema.prisma",
+    "db:migrate": "prisma migrate dev --schema packages/database/prisma/schema.prisma",
+    "db:deploy": "prisma migrate deploy --schema packages/database/prisma/schema.prisma",
+    "db:seed": "tsx packages/database/prisma/seed.ts",
+    "check": "npm run typecheck && npm test && npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "concurrently": "^9.1.0",
+    "esbuild": "^0.24.2",
+    "prettier": "^3.4.2",
+    "prisma": "^6.2.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  },
+  "dependencies": {
+    "zod": "^3.24.1"
+  },
+  "prisma": {
+    "schema": "packages/database/prisma/schema.prisma"
+  },
+  "allowScripts": {
+    "esbuild@0.24.2": true,
+    "esbuild@0.28.2": true,
+    "prisma@6.19.3": true,
+    "@prisma/engines@6.19.3": true,
+    "@prisma/client@6.19.3": true,
+    "msgpackr-extract@3.0.4": true,
+    "sharp@0.34.5": true
+  }
+}

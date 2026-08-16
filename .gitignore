@@ -1,0 +1,53 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build output
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+
+# Prisma
+packages/database/src/generated/
+!packages/database/src/generated/.gitkeep
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Secrets / credentials
+*.pem
+*.key
+*.p12
+*.pfx
+credentials*
+secrets*
+tokens*
+*.sqlite
+*.sqlite3
+*.db
+
+# Storage (local dev media files)
+/data/
+/storage/
+
+# Test / coverage
+coverage/
+.nyc_output/
+*.log
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+
+# Misc
+.temp/
+.vercel/

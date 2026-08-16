@@ -1,0 +1,37 @@
+# ---- Dependencies stage ----
+FROM node:22-alpine AS deps
+WORKDIR /app
+COPY package.json package-lock.json* ./
+COPY apps/api/package.json apps/api/package.json
+COPY apps/worker/package.json apps/worker/package.json
+COPY apps/web/package.json apps/web/package.json
+COPY packages/*/package.json packages/
+# Some packages are globs; npm needs the tree laid out. Install everything.
+RUN npm install
+
+# ---- Builder stage ----
+FROM node:22-alpine AS builder
+WORKDIR /app
+ENV NEXT_TELEMETRY_DISABLED=1
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+RUN npx prisma generate --schema packages/database/prisma/schema.prisma
+RUN npm run build:packages
+RUN npm run build:api
+RUN npm run build:worker
+
+# ---- Runner stage ----
+FROM node:22-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/apps/api/dist ./apps/api/dist
+COPY --from=builder /app/apps/worker/dist ./apps/worker/dist
+COPY --from=builder /app/packages/database/prisma ./packages/database/prisma
+# Make Prisma query engine resolvable from the bundled output.
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+
+EXPOSE 4000
+CMD ["node", "apps/api/dist/index.js"]

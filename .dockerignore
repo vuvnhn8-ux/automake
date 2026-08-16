@@ -1,0 +1,33 @@
+# Keep the Docker build context small and free of secrets.
+node_modules
+**/node_modules
+dist
+**/dist
+.next
+**/.next
+out
+coverage
+*.tsbuildinfo
+
+# Never copy local environment/secrets into image build layers.
+.env
+.env.*
+!.env.example
+
+# Local data / media / logs
+data
+storage
+*.log
+
+# VCS / editor / OS
+.git
+.gitignore
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# Docs are not needed inside the image
+docs
+DEPLOYMENT.md
+README.md

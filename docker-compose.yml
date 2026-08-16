@@ -1,0 +1,185 @@
+# AI Video Factory — production Docker Compose.
+#
+# Services: db (PostgreSQL), redis (queue + schedule storage), api, worker,
+# web. The worker also acts as the scheduler: it arms active schedules as
+# BullMQ repeatable jobs at boot (see apps/worker/src/index.ts).
+#
+# Required overrides (set in a .env file next to this file or in your shell):
+#   JWT_SECRET, SECRET_ENCRYPTION_KEY, FACEBOOK_TOKEN_ENCRYPTION_KEY,
+#   POSTGRES_PASSWORD, and the provider API keys you use.
+# NEXT_PUBLIC_API_URL is a BUILD arg (inlined by Next.js at build time).
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-postgres-password}
+      POSTGRES_DB: ${POSTGRES_DB:-avf}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-avf}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    # Internal networking only — do not expose Postgres to the host.
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # Internal networking only — do not expose Redis to the host.
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    restart: unless-stopped
+    init: true
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      API_URL: ${API_URL:-http://localhost:4000}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-change-me-postgres-password}@db:5432/${POSTGRES_DB:-avf}
+      REDIS_URL: redis://redis:6379
+      QUEUE_DRIVER: bullmq
+      JWT_SECRET: ${JWT_SECRET:-change-me-jwt-secret-at-least-32-chars}
+      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
+      JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-7d}
+      SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY:-}
+      AI_TEXT_PROVIDER: ${AI_TEXT_PROVIDER:-MOCK}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      RESEARCH_PROVIDER: ${RESEARCH_PROVIDER:-MOCK}
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      EXA_API_KEY: ${EXA_API_KEY:-}
+      IMAGE_PROVIDER: ${IMAGE_PROVIDER:-MOCK}
+      OPENAI_IMAGE_MODEL: ${OPENAI_IMAGE_MODEL:-gpt-image-1}
+      VIDEO_PROVIDER: ${VIDEO_PROVIDER:-MOCK}
+      GOOGLE_VEO_API_KEY: ${GOOGLE_VEO_API_KEY:-}
+      RUNWAY_API_KEY: ${RUNWAY_API_KEY:-}
+      KLING_API_KEY: ${KLING_API_KEY:-}
+      VOICE_PROVIDER: ${VOICE_PROVIDER:-MOCK}
+      OPENAI_TTS_MODEL: ${OPENAI_TTS_MODEL:-gpt-4o-mini-tts}
+      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
+      RENDER_DRIVER: ${RENDER_DRIVER:-mock}
+      FFMPEG_PATH: ffmpeg
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
+      STORAGE_ROOT: /data/storage
+      STORAGE_PUBLIC_URL: ${STORAGE_PUBLIC_URL:-http://localhost:4000/files}
+      FACEBOOK_APP_ID: ${FACEBOOK_APP_ID:-}
+      FACEBOOK_APP_SECRET: ${FACEBOOK_APP_SECRET:-}
+      FACEBOOK_REDIRECT_URI: ${FACEBOOK_REDIRECT_URI:-http://localhost:4000/api/facebook/oauth/callback}
+      FACEBOOK_GRAPH_VERSION: ${FACEBOOK_GRAPH_VERSION:-v22.0}
+      FACEBOOK_TOKEN_ENCRYPTION_KEY: ${FACEBOOK_TOKEN_ENCRYPTION_KEY:-}
+    volumes:
+      - data:/data
+    ports:
+      - "4000:4000"
+    command: >
+      sh -c "npx prisma migrate deploy --schema packages/database/prisma/schema.prisma &&
+             node apps/api/dist/index.js"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    init: true
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      ROLE: worker
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-change-me-postgres-password}@db:5432/${POSTGRES_DB:-avf}
+      REDIS_URL: redis://redis:6379
+      QUEUE_DRIVER: bullmq
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-1}
+      WORKER_TEMP_DIR: ${WORKER_TEMP_DIR:-/data/worker-tmp}
+      WORKER_HEARTBEAT_INTERVAL_MS: ${WORKER_HEARTBEAT_INTERVAL_MS:-15000}
+      WORKER_ARM_SCHEDULES: ${WORKER_ARM_SCHEDULES:-true}
+      SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY:-}
+      AI_TEXT_PROVIDER: ${AI_TEXT_PROVIDER:-MOCK}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      RESEARCH_PROVIDER: ${RESEARCH_PROVIDER:-MOCK}
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      EXA_API_KEY: ${EXA_API_KEY:-}
+      IMAGE_PROVIDER: ${IMAGE_PROVIDER:-MOCK}
+      OPENAI_IMAGE_MODEL: ${OPENAI_IMAGE_MODEL:-gpt-image-1}
+      VIDEO_PROVIDER: ${VIDEO_PROVIDER:-MOCK}
+      GOOGLE_VEO_API_KEY: ${GOOGLE_VEO_API_KEY:-}
+      RUNWAY_API_KEY: ${RUNWAY_API_KEY:-}
+      KLING_API_KEY: ${KLING_API_KEY:-}
+      VOICE_PROVIDER: ${VOICE_PROVIDER:-MOCK}
+      OPENAI_TTS_MODEL: ${OPENAI_TTS_MODEL:-gpt-4o-mini-tts}
+      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
+      RENDER_DRIVER: ${RENDER_DRIVER:-mock}
+      FFMPEG_PATH: ffmpeg
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
+      STORAGE_ROOT: /data/storage
+      STORAGE_PUBLIC_URL: ${STORAGE_PUBLIC_URL:-http://localhost:4000/files}
+      FACEBOOK_APP_ID: ${FACEBOOK_APP_ID:-}
+      FACEBOOK_APP_SECRET: ${FACEBOOK_APP_SECRET:-}
+      FACEBOOK_TOKEN_ENCRYPTION_KEY: ${FACEBOOK_TOKEN_ENCRYPTION_KEY:-}
+    volumes:
+      - data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'apps/worker/dist/index.js' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
+    restart: unless-stopped
+    init: true
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+
+volumes:
+  pgdata:
+  redisdata:
+  data:

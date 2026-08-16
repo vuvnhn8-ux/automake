@@ -1,0 +1,16 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/shared" },
+    { "path": "./packages/config" },
+    { "path": "./packages/database" },
+    { "path": "./packages/storage" },
+    { "path": "./packages/ai" },
+    { "path": "./packages/media" },
+    { "path": "./packages/video" },
+    { "path": "./packages/social" },
+    { "path": "./packages/queue" },
+    { "path": "./apps/api" },
+    { "path": "./apps/worker" }
+  ]
+}

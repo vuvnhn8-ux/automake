@@ -1,0 +1,25 @@
+{
+  "name": "@avf/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "build": "node ../../scripts/bundle.mjs worker",
+    "typecheck": "tsc -b tsconfig.json --pretty false"
+  },
+  "dependencies": {
+    "@avf/ai": "^0.1.0",
+    "@avf/config": "^0.1.0",
+    "@avf/database": "^0.1.0",
+    "@avf/media": "^0.1.0",
+    "@avf/queue": "^0.1.0",
+    "@avf/shared": "^0.1.0",
+    "@avf/social": "^0.1.0",
+    "@avf/storage": "^0.1.0",
+    "@avf/video": "^0.1.0"
+  }
+}

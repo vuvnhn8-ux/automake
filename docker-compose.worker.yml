@@ -1,0 +1,108 @@
+# AI Video Factory — Worker-only Compose (hybrid deployment).
+#
+# Runs ONLY the worker (with FFmpeg) on the remote machine — the home
+# workstation now, and later a dedicated worker VPS or additional worker VPSes.
+# No PostgreSQL or Redis is started here: the worker connects OUTBOUND to the
+# control-plane VPS via REDIS_URL and DATABASE_URL. No ports are exposed, so no
+# inbound firewall rules or router port forwarding are required.
+#
+# Usage:
+#   docker build -f Dockerfile.worker -t avf-worker .
+#   docker compose -f docker-compose.worker.yml --env-file .env.worker up -d
+#
+# Required env (set in your .env.worker):
+#   DATABASE_URL  -> postgresql://...@<vps>/avf
+#   REDIS_URL     -> redis://...@<vps>:6379  (or rediss:// for TLS)
+#   SECRET_ENCRYPTION_KEY
+#   FACEBOOK_TOKEN_ENCRYPTION_KEY
+#   S3_ACCESS_KEY, S3_SECRET_KEY, S3_BUCKET   (shared storage; see below)
+#
+# Storage: the remote worker must read scene assets and upload rendered videos
+# through the SAME storage as the VPS. Set STORAGE_DRIVER=s3 (Cloudflare R2,
+# Backblaze B2, MinIO or AWS S3 all work). Do not use STORAGE_DRIVER=local on a
+# remote worker — its disk is not the VPS disk.
+
+services:
+  worker:
+    image: avf-worker
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    init: true
+    environment:
+      NODE_ENV: production
+      ROLE: worker
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required (point at the VPS database)}
+      REDIS_URL: ${REDIS_URL:?REDIS_URL is required (point at the VPS Redis)}
+      QUEUE_DRIVER: bullmq
+
+      # Worker identity / behaviour
+      WORKER_ID: ${WORKER_ID:-}
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-1}
+      WORKER_TEMP_DIR: /data/worker-tmp
+      WORKER_HEARTBEAT_INTERVAL_MS: ${WORKER_HEARTBEAT_INTERVAL_MS:-15000}
+      # Keep the scheduler on the VPS worker. Home workers can leave this true
+      # (arming is idempotent) or disable it here.
+      WORKER_ARM_SCHEDULES: ${WORKER_ARM_SCHEDULES:-true}
+
+      # Rendering
+      RENDER_DRIVER: ${RENDER_DRIVER:-ffmpeg}
+      FFMPEG_PATH: ffmpeg
+      RENDER_TIMEOUT_MS: ${RENDER_TIMEOUT_MS:-600000}
+
+      # Secrets for DB-backed provider keys + Facebook page tokens
+      SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY:?SECRET_ENCRYPTION_KEY is required}
+      FACEBOOK_TOKEN_ENCRYPTION_KEY: ${FACEBOOK_TOKEN_ENCRYPTION_KEY:?FACEBOOK_TOKEN_ENCRYPTION_KEY is required}
+      FACEBOOK_GRAPH_VERSION: ${FACEBOOK_GRAPH_VERSION:-v22.0}
+
+      # AI providers (must match the VPS so generated content is consistent)
+      AI_TEXT_PROVIDER: ${AI_TEXT_PROVIDER:-MOCK}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      RESEARCH_PROVIDER: ${RESEARCH_PROVIDER:-MOCK}
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      EXA_API_KEY: ${EXA_API_KEY:-}
+      IMAGE_PROVIDER: ${IMAGE_PROVIDER:-MOCK}
+      OPENAI_IMAGE_MODEL: ${OPENAI_IMAGE_MODEL:-gpt-image-1}
+      VIDEO_PROVIDER: ${VIDEO_PROVIDER:-MOCK}
+      GOOGLE_VEO_API_KEY: ${GOOGLE_VEO_API_KEY:-}
+      RUNWAY_API_KEY: ${RUNWAY_API_KEY:-}
+      KLING_API_KEY: ${KLING_API_KEY:-}
+      VOICE_PROVIDER: ${VOICE_PROVIDER:-MOCK}
+      OPENAI_TTS_MODEL: ${OPENAI_TTS_MODEL:-gpt-4o-mini-tts}
+      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
+
+      # Shared storage — S3-compatible so the VPS and every worker see the same
+      # assets. (Local is single-machine only.)
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-s3}
+      STORAGE_ROOT: /data/storage
+      STORAGE_PUBLIC_URL: ${STORAGE_PUBLIC_URL:-}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-}
+      S3_REGION: ${S3_REGION:-auto}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
+
+      # Retries / timeouts
+      MAX_RETRIES: ${MAX_RETRIES:-3}
+      JOB_TIMEOUT_MS: ${JOB_TIMEOUT_MS:-900000}
+      VOICE_TIMEOUT_MS: ${VOICE_TIMEOUT_MS:-120000}
+      IMAGE_TIMEOUT_MS: ${IMAGE_TIMEOUT_MS:-120000}
+
+    volumes:
+      - workertmp:/data/worker-tmp
+      - data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'apps/worker/dist/index.js' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  workertmp:
+  data:

@@ -1,0 +1,18 @@
+{
+  "name": "@avf/config",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "build": "tsc -b tsconfig.json",
+    "typecheck": "tsc -b tsconfig.json --pretty false"
+  },
+  "dependencies": {
+    "@avf/database": "^0.1.0",
+    "@avf/shared": "^0.1.0",
+    "dotenv": "^16.4.7",
+    "zod": "^3.24.1"
+  }
+}

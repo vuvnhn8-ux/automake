@@ -1,0 +1,888 @@
+// Prisma schema for AI Video Factory.
+// Model relationships (from docs/ARCHITECTURE.md):
+//
+//   User ─┬─ Project ─┬─ Topic
+//         │           ├─ Content ─┬─ Script
+//         │           │           ├─ Scene ─┬─ MediaAsset (image / video / voice / subtitle)
+//         │           │           └─ Video ─┬─ RenderJob
+//         │           ├─ Video              └─ PublishingJob
+//         │           ├─ Schedule
+//         │           └─ FacebookPage
+//         ├─ FacebookPage
+//         ├─ Session
+//         └─ GenerationLog
+//
+//   Content campaigns (multi-channel / multi-platform):
+//
+//   User ─ Project ─ ContentCampaign ─┬─ CampaignChannelAssignment ─ PublishingChannel ─ PublishingAccount
+//                                     ├─ ContentSeries ─ Topic
+//                                     ├─ CampaignKnowledge
+//                                     └─ Schedule
+//   Content ─(variantOfContentId)─ Content variant (localized)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum UserRole {
+  ADMIN
+  USER
+}
+
+enum ProjectPublishingMode {
+  MANUAL
+  SEMI_AUTOMATIC
+  FULL_AUTOMATIC
+}
+
+enum ContentStatus {
+  DRAFT
+  GENERATING
+  READY
+  NEEDS_REVIEW
+  FAILED
+}
+
+enum ScriptStatus {
+  PENDING
+  GENERATING
+  READY
+  FAILED
+}
+
+enum SceneKind {
+  IMAGE
+  VIDEO
+}
+
+enum SceneStatus {
+  PENDING
+  GENERATING
+  READY
+  FAILED
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+  AUDIO
+  SUBTITLE
+  MUSIC
+  THUMBNAIL
+}
+
+enum MediaStatus {
+  PENDING
+  GENERATING
+  READY
+  FAILED
+}
+
+enum VideoStatus {
+  DRAFT
+  GENERATING
+  RENDERING
+  READY
+  NEEDS_REVIEW
+  FAILED
+}
+
+enum RenderJobStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  FAILED
+  CANCELLED
+}
+
+enum PublishingStatus {
+  PENDING
+  UPLOADING
+  PROCESSING
+  PUBLISHED
+  FAILED
+  CANCELLED
+}
+
+enum ScheduleStatus {
+  ACTIVE
+  PAUSED
+}
+
+enum ScheduleDay {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+enum ProviderType {
+  AI
+  IMAGE
+  VIDEO
+  VOICE
+  RESEARCH
+  STORAGE
+}
+
+enum VideoTemplate {
+  DEFAULT_REELS
+  NEWS
+  FACTS
+  TOP5
+  STORY
+  EDUCATIONAL
+}
+
+enum AnalyticsMetric {
+  VIEWS
+  LIKES
+  COMMENTS
+  SHARES
+  REACH
+  ENGAGEMENT
+}
+
+enum GenerationLogStatus {
+  SUCCESS
+  FAILED
+}
+
+enum FacebookPageStatus {
+  CONNECTED
+  EXPIRED
+  REVOKED
+}
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum PublishingAccountStatus {
+  CONNECTED
+  EXPIRED
+  REVOKED
+  DISCONNECTED
+}
+
+enum ChannelPlatform {
+  FACEBOOK
+  YOUTUBE
+  TIKTOK
+  INSTAGRAM
+  OTHER
+}
+
+enum TopicSource {
+  MANUAL
+  AI
+}
+
+enum KnowledgeType {
+  TEXT
+  TXT
+  MARKDOWN
+  PDF
+  URL
+}
+
+enum WorkerStatus {
+  ONLINE
+  OFFLINE
+  DRAINING
+}
+
+// ---------------------------------------------------------------------------
+// Identity & Access
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String        @id @default(uuid()) @db.Uuid
+  email        String        @unique
+  passwordHash String
+  name         String        @default("")
+  avatarUrl    String?
+  role         UserRole      @default(USER)
+  isActive     Boolean       @default(true)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  projects      Project[]
+  facebookPages FacebookPage[]
+  sessions      Session[]
+  generationLogs GenerationLog[]
+}
+
+model Session {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  tokenHash String   @unique
+  expiresAt DateTime
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Content pipeline
+// ---------------------------------------------------------------------------
+
+model Project {
+  id                    String                @id @default(uuid()) @db.Uuid
+  userId                String                @db.Uuid
+  name                  String
+  description           String?
+  language              String                @default("vi-VN")
+  category              String?
+  defaultTemplate       VideoTemplate         @default(DEFAULT_REELS)
+  defaultVoice          String?
+  defaultAIProvider     String?
+  defaultImageProvider  String?
+  defaultVideoProvider  String?
+  defaultVoiceProvider  String?
+  defaultDurationSeconds Int                  @default(60)
+  publishingMode        ProjectPublishingMode @default(MANUAL)
+  facebookPageId        String?               @db.Uuid
+  isArchived            Boolean               @default(false)
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  topics        Topic[]
+  contents      Content[]
+  videos        Video[]
+  schedules     Schedule[]
+  channels      PublishingChannel[]
+  facebookPage  FacebookPage? @relation(fields: [facebookPageId], references: [id])
+  generationLogs GenerationLog[]
+  analytics     Analytics[]
+  campaigns     ContentCampaign[]
+  accounts      PublishingAccount[]
+
+  @@index([userId])
+}
+
+model PublishingAccount {
+  id                String                  @id @default(uuid()) @db.Uuid
+  projectId         String                  @db.Uuid
+  platform          ChannelPlatform         @default(FACEBOOK)
+  accountName       String
+  externalAccountId String?
+  credentials       String
+  status            PublishingAccountStatus @default(CONNECTED)
+  metadata          Json?
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+
+  project  Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  channels PublishingChannel[]
+
+  @@index([projectId])
+}
+
+model PublishingChannel {
+  id                    String          @id @default(uuid()) @db.Uuid
+  projectId             String          @db.Uuid
+  name                  String
+  platform              ChannelPlatform @default(FACEBOOK)
+  description           String?
+  dailyVideoTarget      Int             @default(1)
+  autoGenerationEnabled Boolean         @default(false)
+  isActive              Boolean         @default(true)
+  facebookPageId        String?         @db.Uuid
+  publishingAccountId   String?         @db.Uuid
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  project          Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  facebookPage     FacebookPage?          @relation(fields: [facebookPageId], references: [id], onDelete: SetNull)
+  publishingAccount PublishingAccount?    @relation(fields: [publishingAccountId], references: [id], onDelete: SetNull)
+  contentProfile   ChannelContentProfile?
+  series           ContentSeries[]
+  knowledge        ChannelKnowledge[]
+  schedules        Schedule[]
+  contents         Content[]
+  videos           Video[]
+  publishingJobs   PublishingJob[]
+  analytics        Analytics[]
+  assignments      CampaignChannelAssignment[]
+
+  @@index([projectId])
+  @@index([facebookPageId])
+  @@index([publishingAccountId])
+}
+
+model ChannelContentProfile {
+  id                     String   @id @default(uuid()) @db.Uuid
+  channelId              String   @unique @db.Uuid
+  description            String?
+  audience               String?
+  language               String   @default("vi-VN")
+  tone                   String   @default("PROFESSIONAL")
+  contentStyle           String?
+  videoStyle             String?
+  defaultDurationSeconds Int?
+  defaultTemplate        String?
+  aiInstructions         String?
+  contentRules           Json?
+  excludedTopics         String[] @default([])
+  keywords               String[] @default([])
+  hashtags               String[] @default([])
+  cta                    String?
+  isActive               Boolean  @default(true)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  channel PublishingChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+}
+
+model ContentSeries {
+  id             String   @id @default(uuid()) @db.Uuid
+  channelId      String?  @db.Uuid
+  campaignId     String?  @db.Uuid
+  name           String
+  description    String?
+  instructions   String?
+  keywords       String[] @default([])
+  excludedTopics String[] @default([])
+  language       String?
+  tone           String?
+  durationSeconds Int?
+  frequencyPerDay Int     @default(1)
+  priority       Int      @default(1)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  channel  PublishingChannel? @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  campaign ContentCampaign?  @relation("CampaignSeries", fields: [campaignId], references: [id], onDelete: Cascade)
+  topics   Topic[]
+  schedules Schedule[]
+  contents Content[]
+  videos   Video[]
+  analytics Analytics[]
+  publishingJobs PublishingJob[]
+
+  @@index([channelId])
+  @@index([campaignId])
+}
+
+model ChannelKnowledge {
+  id        String       @id @default(uuid()) @db.Uuid
+  channelId String       @db.Uuid
+  type      KnowledgeType @default(TEXT)
+  title     String
+  content   String?
+  fileKey   String?
+  fileName  String?
+  mimeType  String?
+  url       String?
+  isActive  Boolean      @default(true)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  channel PublishingChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@index([channelId])
+}
+
+model Topic {
+  id             String    @id @default(uuid()) @db.Uuid
+  projectId      String    @db.Uuid
+  seriesId       String?   @db.Uuid
+  name           String
+  description    String?
+  keywords       String[]  @default([])
+  language       String    @default("vi-VN")
+  frequencyPerDay Int      @default(1)
+  source         TopicSource @default(MANUAL)
+  usedCount      Int       @default(0)
+  isActive       Boolean   @default(true)
+  lastUsedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  project  Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  series   ContentSeries? @relation(fields: [seriesId], references: [id], onDelete: Cascade)
+  contents Content[]
+  schedules Schedule[]
+  analytics Analytics[]
+
+  @@index([projectId])
+  @@index([seriesId])
+}
+
+model Content {
+  id         String        @id @default(uuid()) @db.Uuid
+  projectId  String        @db.Uuid
+  campaignId String?       @db.Uuid
+  channelId  String?       @db.Uuid
+  seriesId   String?       @db.Uuid
+  topicId    String?       @db.Uuid
+  language   String?
+  variantOfContentId String? @db.Uuid
+  title      String?
+  hook       String?
+  caption    String?
+  hashtags   String[]      @default([])
+  status     ContentStatus @default(DRAFT)
+  errorMessage String?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  project  Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  campaign ContentCampaign? @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  channel  PublishingChannel? @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  series  ContentSeries?   @relation(fields: [seriesId], references: [id], onDelete: SetNull)
+  topic   Topic?           @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  variantOf Content?       @relation("ContentVariant", fields: [variantOfContentId], references: [id], onDelete: SetNull)
+  variants Content[]       @relation("ContentVariant")
+  script  Script?
+  scenes  Scene[]
+  video   Video?
+  mediaAssets MediaAsset[]
+
+  @@index([projectId])
+  @@index([campaignId])
+  @@index([channelId])
+  @@index([seriesId])
+  @@index([topicId])
+  @@index([variantOfContentId])
+}
+
+model Script {
+  id        String       @id @default(uuid()) @db.Uuid
+  contentId String       @unique @db.Uuid
+  text      String
+  hook      String?
+  fullText  String?
+  status    ScriptStatus @default(PENDING)
+  provider  String?
+  model     String?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  content Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
+}
+
+model Scene {
+  id              String      @id @default(uuid()) @db.Uuid
+  contentId       String      @db.Uuid
+  order           Int
+  kind            SceneKind   @default(IMAGE)
+  durationSeconds Int         @default(5)
+  narration       String?
+  visualPrompt    String?
+  subtitleText    String?
+  status          SceneStatus @default(PENDING)
+  errorMessage    String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  content Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  assets  MediaAsset[]
+
+  @@unique([contentId, order])
+  @@index([contentId])
+}
+
+model MediaAsset {
+  id              String      @id @default(uuid()) @db.Uuid
+  sceneId         String?     @db.Uuid
+  contentId       String?     @db.Uuid
+  videoId         String?     @db.Uuid
+  type            MediaType
+  status          MediaStatus @default(PENDING)
+  provider        String      @default("mock")
+  model           String?
+  url             String?
+  fileKey         String?
+  mimeType        String?
+  sizeBytes       Int?
+  durationSeconds Float?
+  width           Int?
+  height          Int?
+  metadata        Json?
+  errorMessage    String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  scene   Scene?   @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+  content Content? @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  video   Video?   @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@index([sceneId])
+  @@index([contentId])
+  @@index([videoId])
+}
+
+model Video {
+  id                String      @id @default(uuid()) @db.Uuid
+  contentId         String      @unique @db.Uuid
+  projectId         String      @db.Uuid
+  campaignId        String?     @db.Uuid
+  channelId         String?     @db.Uuid
+  seriesId          String?     @db.Uuid
+  title             String
+  description       String?
+  template          VideoTemplate @default(DEFAULT_REELS)
+  resolution        String      @default("1080x1920")
+  fps               Int         @default(30)
+  durationSeconds   Int?
+  fileKey           String?
+  url               String?
+  thumbnailKey      String?
+  thumbnailUrl      String?
+  caption           String?
+  hashtags          String[]    @default([])
+  status            VideoStatus @default(DRAFT)
+  qualityScore      Int?
+  qaResult          Json?
+  errorMessage      String?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  publishedAt       DateTime?
+
+  project         Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  campaign        ContentCampaign? @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  channel         PublishingChannel? @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  series          ContentSeries?   @relation(fields: [seriesId], references: [id], onDelete: SetNull)
+  content         Content          @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  renderJobs      RenderJob[]
+  publishingJobs  PublishingJob[]
+  assets          MediaAsset[]
+  analytics       Analytics[]
+  @@index([projectId])
+  @@index([campaignId])
+  @@index([channelId])
+  @@index([seriesId])
+}
+
+model RenderJob {
+  id          String         @id @default(uuid()) @db.Uuid
+  videoId     String         @db.Uuid
+  status      RenderJobStatus @default(PENDING)
+  config      Json?
+  log         String?
+  attempt     Int            @default(1)
+  startedAt   DateTime?
+  completedAt DateTime?
+  error       String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@index([videoId])
+  @@index([status])
+}
+
+model PublishingJob {
+  id            String          @id @default(uuid()) @db.Uuid
+  videoId       String          @db.Uuid
+  campaignId    String?         @db.Uuid
+  facebookPageId String?        @db.Uuid
+  channelId     String?         @db.Uuid
+  seriesId      String?         @db.Uuid
+  scheduledAt   DateTime?
+  status        PublishingStatus @default(PENDING)
+  facebookPostId String?
+  descriptionOverride String?
+  publishedAt   DateTime?
+  errorMessage  String?
+  retryCount    Int             @default(0)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  video        Video        @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  campaign     ContentCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  facebookPage FacebookPage? @relation(fields: [facebookPageId], references: [id], onDelete: SetNull)
+  channel      PublishingChannel? @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  series       ContentSeries?   @relation(fields: [seriesId], references: [id], onDelete: SetNull)
+  analytics    Analytics[]
+
+  @@index([videoId])
+  @@index([status])
+  @@index([campaignId])
+  @@index([channelId])
+  @@index([seriesId])
+}
+
+// ---------------------------------------------------------------------------
+// Social
+// ---------------------------------------------------------------------------
+
+model FacebookPage {
+  id              String             @id @default(uuid()) @db.Uuid
+  userId          String             @db.Uuid
+  pageId          String             @unique
+  pageName        String
+  accessTokenEnc  String
+  tokenExpiresAt  DateTime?
+  status          FacebookPageStatus @default(CONNECTED)
+  scopes          String[]           @default([])
+  installedAt     DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projects   Project[]
+  channels   PublishingChannel[]
+  publishingJobs PublishingJob[]
+
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Scheduling
+// ---------------------------------------------------------------------------
+
+model Schedule {
+  id          String          @id @default(uuid()) @db.Uuid
+  projectId   String          @db.Uuid
+  campaignId  String?         @db.Uuid
+  channelId   String?         @db.Uuid
+  seriesId    String?         @db.Uuid
+  name        String          @default("Untitled schedule")
+  times       String[]        @default([]) // ["08:00","12:00","20:00"]
+  days        ScheduleDay[]   @default([]) // empty = every day
+  timezone    String          @default("Asia/Tokyo")
+  topicId     String?         @db.Uuid
+  status      ScheduleStatus  @default(ACTIVE)
+  lastRunAt   DateTime?
+  nextRunAt   DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  project Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  campaign ContentCampaign? @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  channel PublishingChannel? @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  series  ContentSeries?   @relation(fields: [seriesId], references: [id], onDelete: Cascade)
+  topic   Topic?           @relation(fields: [topicId], references: [id], onDelete: SetNull)
+
+  @@index([projectId])
+  @@index([campaignId])
+  @@index([channelId])
+  @@index([seriesId])
+  @@index([status])
+}
+
+// ---------------------------------------------------------------------------
+// Provider registry, logging, analytics, settings
+// ---------------------------------------------------------------------------
+
+model AIProvider {
+  id          String       @id @default(uuid()) @db.Uuid
+  projectId   String?      @db.Uuid
+  type        ProviderType
+  name        String
+  provider    String
+  model       String
+  isDefault   Boolean      @default(false)
+  settings    Json?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@unique([projectId, type, provider, model])
+  @@index([projectId])
+}
+
+model GenerationLog {
+  id            String             @id @default(uuid()) @db.Uuid
+  userId        String?            @db.Uuid
+  projectId     String?            @db.Uuid
+  contentId     String?            @db.Uuid
+  videoId       String?            @db.Uuid
+  jobType       String
+  provider      String?
+  model         String?
+  status        GenerationLogStatus @default(SUCCESS)
+  inputTokens   Int?
+  outputTokens  Int?
+  estimatedCost Float?
+  durationMs    Int?
+  requestId     String?
+  error         String?
+  createdAt     DateTime           @default(now())
+
+  user    User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([projectId])
+  @@index([contentId])
+}
+
+model Analytics {
+  id           String           @id @default(uuid()) @db.Uuid
+  videoId      String?          @db.Uuid
+  projectId    String?          @db.Uuid
+  campaignId   String?          @db.Uuid
+  channelId    String?          @db.Uuid
+  seriesId     String?          @db.Uuid
+  topicId      String?          @db.Uuid
+  publishingJobId String?       @db.Uuid
+  facebookPostId String?
+  metric       AnalyticsMetric
+  value        Float            @default(0)
+  recordedAt   DateTime         @default(now())
+  raw          Json?
+
+  video           Video?            @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  project         Project?          @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  campaign        ContentCampaign?  @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  channel         PublishingChannel? @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  series          ContentSeries?    @relation(fields: [seriesId], references: [id], onDelete: SetNull)
+  topic           Topic?            @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  publishingJob   PublishingJob?    @relation(fields: [publishingJobId], references: [id], onDelete: SetNull)
+
+  @@index([videoId])
+  @@index([projectId, metric, recordedAt])
+  @@index([campaignId])
+  @@index([channelId])
+  @@index([seriesId])
+  @@index([publishingJobId])
+}
+
+model SystemSetting {
+  id          String   @id @default(uuid()) @db.Uuid
+  key         String   @unique
+  value       Json
+  description String?
+  updatedAt   DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Content campaigns — multi-channel / multi-platform publishing
+// ---------------------------------------------------------------------------
+//
+//   ContentCampaign (content strategy)
+//     ├── CampaignChannelAssignment ──┬── PublishingChannel (destination)
+//     │                               └── PublishingAccount
+//     ├── ContentSeries
+//     ├── Topic
+//     ├── CampaignKnowledge
+//     ├── Schedule
+//     └── Content (concept) ── variants (localized Content) ── Video ── PublishingJob
+//
+// A campaign is a content strategy. A channel is a destination. They are never
+// conflated: one campaign can publish to many channels, and one channel can be
+// assigned to many campaigns.
+
+model ContentCampaign {
+  id                String          @id @default(uuid()) @db.Uuid
+  projectId         String          @db.Uuid
+  name              String
+  description       String?
+  status            CampaignStatus  @default(DRAFT)
+  dailyVideoTarget  Int             @default(1)
+  timezone          String          @default("Asia/Tokyo")
+  aiInstructions    String?
+  contentRules      Json?
+  contentProfile    Json?
+  visualProfile     Json?
+  voiceProfile      Json?
+  videoProfile      Json?
+  providerOverrides Json?
+  automation        Json?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  project     Project                    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assignments CampaignChannelAssignment[]
+  series      ContentSeries[]            @relation("CampaignSeries")
+  knowledge    CampaignKnowledge[]
+  schedules    Schedule[]
+  contents     Content[]
+  videos       Video[]
+  analytics    Analytics[]
+  publishingJobs PublishingJob[]
+
+  @@index([projectId])
+  @@index([status])
+}
+
+model CampaignKnowledge {
+  id         String        @id @default(uuid()) @db.Uuid
+  campaignId String        @db.Uuid
+  type       KnowledgeType @default(TEXT)
+  title      String
+  content    String?
+  fileKey    String?
+  fileName   String?
+  mimeType   String?
+  url        String?
+  isActive   Boolean       @default(true)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  campaign ContentCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
+}
+
+model CampaignChannelAssignment {
+  id                     String   @id @default(uuid()) @db.Uuid
+  campaignId             String   @db.Uuid
+  publishingChannelId    String   @db.Uuid
+  enabled                Boolean  @default(true)
+  priority               Int      @default(1)
+  languageOverride       String?
+  voiceProfileOverride   Json?
+  visualProfileOverride  Json?
+  videoProfileOverride   Json?
+  captionInstructions    String?
+  scheduleOverride       Json?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  campaign ContentCampaign   @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  channel  PublishingChannel @relation(fields: [publishingChannelId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, publishingChannelId])
+  @@index([publishingChannelId])
+}
+
+// ---------------------------------------------------------------------------
+// Worker fleet — heartbeat / health visibility
+// ---------------------------------------------------------------------------
+//
+// Every Worker process upserts one row per boot (workerId defaults to the OS
+// hostname). Workers write ONLINE every WORKER_HEARTBEAT_INTERVAL_MS, set
+// DRAINING during graceful shutdown, then OFFLINE on exit. The API exposes
+// these rows at GET /api/workers so the dashboard can show fleet health.
+// No relations — workers are infrastructure, not project data.
+
+model WorkerHeartbeat {
+  workerId        String       @id
+  hostname        String
+  status          WorkerStatus @default(ONLINE)
+  currentJob      String?
+  version         String?
+  concurrency     Int          @default(1)
+  ffmpegAvailable Boolean      @default(false)
+  lastSeenAt      DateTime     @default(now())
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@index([lastSeenAt])
+  @@index([status])
+}

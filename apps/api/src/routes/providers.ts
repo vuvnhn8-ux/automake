@@ -1,0 +1,212 @@
+import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
+import { prisma } from '@avf/database';
+import {
+  env,
+  SecretCipher,
+  getProviderSetting,
+  getActiveProvider,
+  loadProviderConfig,
+} from '@avf/config';
+import {
+  PROVIDER_GROUPS,
+  KEY_ENV_BY_PROVIDER,
+  MODEL_ENV_BY_PROVIDER,
+  type ProviderGroup,
+} from '@avf/shared';
+import {
+  GeminiProvider,
+  OpenAIProvider,
+  ClaudeProvider,
+  MockAIProvider,
+  TavilyResearchProvider,
+  type AICompletionRequest,
+  type AIProvider,
+} from '@avf/ai';
+import { parse } from '../lib/validate.js';
+import { getAuthUser } from '../plugins/auth.js';
+
+const PROVIDER_GROUP_IDS = PROVIDER_GROUPS.map((g) => g.id);
+
+const ProviderUpdateSchema = z.object({
+  group: z.enum(PROVIDER_GROUP_IDS as unknown as [ProviderGroup, ...ProviderGroup[]]),
+  provider: z.string().min(1).max(64),
+  enabled: z.boolean().optional(),
+  setActive: z.boolean().optional(),
+  apiKey: z.string().max(4096).nullable().optional(),
+  model: z.string().max(256).nullable().optional(),
+});
+
+const TestConnectionSchema = z.object({
+  group: z.enum(PROVIDER_GROUP_IDS as unknown as [ProviderGroup, ...ProviderGroup[]]),
+  provider: z.string().min(1).max(64),
+  apiKey: z.string().max(4096).optional(),
+  model: z.string().max(256).optional(),
+});
+
+function maskKey(apiKey: string): string {
+  if (apiKey.length <= 8) return '••••••••';
+  return `${apiKey.slice(0, 4)}••••${apiKey.slice(-4)}`;
+}
+
+function envValue(key: string): string {
+  return (env as unknown as Record<string, string>)[key] ?? '';
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : 'Unknown error';
+}
+
+export async function providersRoutes(app: FastifyInstance): Promise<void> {
+  app.get('/providers', async (request) => {
+    getAuthUser(request);
+    const groups = PROVIDER_GROUPS.map((group) => {
+      const active = getActiveProvider(group.id, envValue(group.envKey) || group.activeDefault);
+      const activeFrom: 'env' | 'db' = getProviderSetting(group.id)?.custom?.active ? 'db' : 'env';
+      return {
+        id: group.id,
+        label: group.label,
+        envKey: group.envKey,
+        envActive: envValue(group.envKey) || group.activeDefault,
+        active,
+        activeFrom,
+        options: group.options.map((opt) => {
+          const setting = getProviderSetting(opt.id);
+          const keyEnv = KEY_ENV_BY_PROVIDER[opt.id];
+          const modelEnv = MODEL_ENV_BY_PROVIDER[opt.id];
+          return {
+            id: opt.id,
+            label: opt.label,
+            requiresKey: opt.requiresKey,
+            isActive: opt.id === active,
+            enabled: setting?.enabled ?? true,
+            apiKeySet: setting?.apiKeySet ?? Boolean(keyEnv && envValue(keyEnv)),
+            keyMask: setting?.custom?.apiKeyMask ?? null,
+            model: setting?.model ?? null,
+            modelEnv: modelEnv ? envValue(modelEnv) : null,
+            keyEnvSet: keyEnv ? Boolean(envValue(keyEnv)) : false,
+          };
+        }),
+      };
+    });
+    return { groups };
+  });
+
+  app.put('/providers', async (request, reply) => {
+    const auth = getAuthUser(request);
+    if (auth.role !== 'ADMIN') {
+      return reply.code(403).send({ error: 'forbidden', message: 'Admins only' });
+    }
+    const body = parse(ProviderUpdateSchema, request.body);
+    const group = PROVIDER_GROUPS.find((g) => g.id === body.group);
+    const option = group?.options.find((o) => o.id === body.provider);
+    if (!group || !option) {
+      return reply.code(400).send({ error: 'invalid_provider', message: 'Unknown provider or group' });
+    }
+    const cipher = new SecretCipher();
+    const keyFor = (key: string) => `provider.${key}`;
+    const write = (key: string, value: unknown) =>
+      prisma.systemSetting.upsert({
+        where: { key },
+        update: { value: value as never },
+        create: { key, value: value as never },
+      });
+    const remove = (key: string) =>
+      prisma.systemSetting.delete({ where: { key } }).catch(() => undefined);
+
+    if (body.setActive) {
+      await write(keyFor(`${group.id}.active`), body.provider);
+      await write(keyFor(`${body.provider}.enabled`), true);
+    }
+    if (typeof body.enabled === 'boolean') {
+      await write(keyFor(`${body.provider}.enabled`), body.enabled);
+    }
+    if (body.apiKey === null) {
+      await remove(keyFor(`${body.provider}.apiKey`));
+      await remove(keyFor(`${body.provider}.apiKeyMask`));
+    } else if (typeof body.apiKey === 'string' && body.apiKey.length > 0) {
+      await write(keyFor(`${body.provider}.apiKey`), cipher.encrypt(body.apiKey));
+      await write(keyFor(`${body.provider}.apiKeyMask`), maskKey(body.apiKey));
+    }
+    if (body.model === null) {
+      await remove(keyFor(`${body.provider}.model`));
+    } else if (typeof body.model === 'string' && body.model.length > 0) {
+      await write(keyFor(`${body.provider}.model`), body.model);
+    }
+
+    await loadProviderConfig();
+    return reply.code(200).send({ ok: true });
+  });
+
+  app.post('/providers/test-connection', async (request, reply) => {
+    const auth = getAuthUser(request);
+    if (auth.role !== 'ADMIN') {
+      return reply.code(403).send({ error: 'forbidden', message: 'Admins only' });
+    }
+    const body = parse(TestConnectionSchema, request.body);
+    const group = PROVIDER_GROUPS.find((g) => g.id === body.group);
+    const option = group?.options.find((o) => o.id === body.provider);
+    if (!group || !option) {
+      return reply.code(400).send({ error: 'invalid_provider', message: 'Unknown provider or group' });
+    }
+
+    const stored = getProviderSetting(body.provider);
+    const apiKey =
+      body.apiKey?.trim() ||
+      stored?.apiKey ||
+      envValue(KEY_ENV_BY_PROVIDER[body.provider] ?? '') ||
+      '';
+    const model =
+      body.model?.trim() ||
+      stored?.model ||
+      envValue(MODEL_ENV_BY_PROVIDER[body.provider] ?? '') ||
+      '';
+
+    try {
+      if (body.group === 'AI_TEXT') {
+        const request: AICompletionRequest = {
+          system: 'Reply with exactly one word: ok',
+          user: 'ping',
+          maxTokens: 8,
+          jsonMode: false,
+        };
+        let provider: AIProvider;
+        switch (body.provider) {
+          case 'GEMINI':
+            provider = new GeminiProvider(apiKey, model);
+            break;
+          case 'OPENAI':
+            provider = new OpenAIProvider(apiKey, model);
+            break;
+          case 'CLAUDE':
+            provider = new ClaudeProvider(apiKey, model);
+            break;
+          case 'MOCK':
+            provider = new MockAIProvider();
+            break;
+          default:
+            return reply
+              .code(400)
+              .send({ ok: false, message: `Provider ${body.provider} is not testable` });
+        }
+        const result = await provider.complete(request);
+        return reply.code(200).send({
+          ok: true,
+          provider: result.provider,
+          model: result.model,
+          durationMs: result.durationMs,
+        });
+      }
+      if (body.group === 'RESEARCH' && body.provider === 'TAVILY') {
+        const provider = new TavilyResearchProvider(apiKey);
+        await provider.research({ topic: 'test', maxSources: 1 });
+        return reply.code(200).send({ ok: true, provider: 'TAVILY' });
+      }
+      return reply
+        .code(400)
+        .send({ ok: false, message: 'Connection test is not supported for this provider yet' });
+    } catch (err) {
+      return reply.code(200).send({ ok: false, message: errorMessage(err) });
+    }
+  });
+}
