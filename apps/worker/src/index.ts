@@ -11,6 +11,7 @@ import { handleRenderVideo } from './jobs/render-video.js';
 import { handleQualityCheck } from './jobs/quality-check.js';
 import { handlePublishVideo } from './jobs/publish-video.js';
 import { handleScheduledRun, armActiveSchedules } from './jobs/scheduled-run.js';
+import { handleTelegramDailyReport, armDailyReport } from './jobs/telegram-daily-report.js';
 import { assertFFmpegAvailable } from './lib/ffmpeg.js';
 import { ensureTempRoot } from './lib/temp.js';
 import { resolveWorkerId, resolveWorkerHostname, resolveWorkerVersion } from './lib/identity.js';
@@ -86,6 +87,9 @@ async function main(): Promise<void> {
   ctx.queue.registerHandler('scheduled-run', withLifecycle('scheduled-run', (p, c) =>
     handleScheduledRun(ctx, p as never),
   ));
+  ctx.queue.registerHandler('telegram-daily-report', withLifecycle('telegram-daily-report', (p, c) =>
+    handleTelegramDailyReport(ctx, p as never),
+  ));
 
   await ctx.queue.start();
 
@@ -99,6 +103,13 @@ async function main(): Promise<void> {
       const message = err instanceof Error ? err.message : String(err);
       console.warn(`[worker] schedule arming deferred (Redis may be offline): ${message}`);
     }
+  }
+
+  try {
+    await armDailyReport(ctx);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`[worker] telegram daily report arming deferred: ${message}`);
   }
 
   console.log(

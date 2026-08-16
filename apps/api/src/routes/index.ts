@@ -14,6 +14,7 @@ import { providersRoutes } from './providers.js';
 import { campaignRoutes } from './campaigns.js';
 import { accountRoutes } from './accounts.js';
 import { workerRoutes } from './workers.js';
+import { publishingJobRoutes } from './publishing-jobs.js';
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {
   await app.register(authRoutes, { prefix: '/api/auth' });
@@ -31,4 +32,5 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   await app.register(campaignRoutes, { prefix: '/api' });
   await app.register(accountRoutes, { prefix: '/api' });
   await app.register(workerRoutes, { prefix: '/api' });
+  await app.register(publishingJobRoutes, { prefix: '/api' });
 }

@@ -14,9 +14,56 @@ const CreateProjectSchema = z.object({
   defaultVoice: z.string().max(100).optional(),
   defaultDurationSeconds: z.number().int().min(10).max(600).optional(),
   publishingMode: PublishingModeSchema.optional(),
+  dailyVideoTarget: z.number().int().min(1).max(100).optional(),
+  timezone: z.string().max(64).optional(),
 });
 
 const UpdateProjectSchema = CreateProjectSchema.partial();
+
+const ProjectConfigSchema = z.object({
+  // Content
+  contentTheme: z.string().max(2000).optional(),
+  keywords: z.array(z.string()).optional(),
+  contentInstructions: z.string().max(5000).optional(),
+  avoid: z.string().max(5000).optional(),
+  targetAudience: z.string().max(2000).optional(),
+  // Language
+  contentLanguage: z.string().max(16).optional(),
+  voiceLanguage: z.string().max(16).optional(),
+  languageVariants: z.array(z.string()).optional(),
+  // Visual
+  visualStyle: z.string().max(500).optional(),
+  imageStyle: z.string().max(500).optional(),
+  videoStyle: z.string().max(500).optional(),
+  aspectRatio: z.string().max(20).optional(),
+  resolution: z.string().max(20).optional(),
+  durationTarget: z.number().int().min(10).max(600).optional(),
+  subtitleStyle: z.string().max(500).optional(),
+  // Voice
+  voiceProvider: z.string().max(100).optional(),
+  voice: z.string().max(100).optional(),
+  voiceGender: z.string().max(20).optional(),
+  voiceSpeed: z.number().min(0.1).max(3).optional(),
+  voiceTone: z.string().max(100).optional(),
+  // AI
+  scriptProvider: z.string().max(100).optional(),
+  imageProvider: z.string().max(100).optional(),
+  videoProvider: z.string().max(100).optional(),
+  voiceProviderAI: z.string().max(100).optional(),
+  fallbackProviders: z.array(z.string()).optional(),
+  // Schedule
+  schedule: z
+    .object({
+      times: z.array(z.string()).max(10).optional(),
+      days: z.array(z.enum(['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'])).optional(),
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
+      randomizationWindowMin: z.number().int().min(0).max(180).optional(),
+    })
+    .optional(),
+  // Notifications
+  notifyOnFailure: z.boolean().optional(),
+});
 
 export async function projectRoutes(app: FastifyInstance): Promise<void> {
   app.get('/', async (request) => {
@@ -24,9 +71,22 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
     const projects = await prisma.project.findMany({
       where: { userId: auth.id, isArchived: false },
       orderBy: { createdAt: 'desc' },
-      include: { _count: { select: { topics: true, videos: true, contents: true, schedules: true } } },
+      include: {
+        _count: { select: { topics: true, videos: true, contents: true, schedules: true, channelAssignments: true } },
+        schedules: {
+          where: { status: 'ACTIVE' },
+          select: { nextRunAt: true },
+          orderBy: { nextRunAt: 'asc' },
+          take: 1,
+        },
+      },
     });
-    return { projects };
+    return {
+      projects: projects.map(({ schedules, ...p }) => ({
+        ...p,
+        nextRunAt: schedules[0]?.nextRunAt ?? null,
+      })),
+    };
   });
 
   app.post('/', async (request, reply) => {
@@ -45,13 +105,34 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
       where: { id, userId: auth.id },
       include: {
         facebookPage: { select: { id: true, pageId: true, pageName: true, status: true } },
-        _count: { select: { topics: true, videos: true, contents: true, schedules: true } },
+        channelAssignments: {
+          include: {
+            channel: {
+              include: {
+                project: { select: { id: true, name: true } },
+                publishingAccount: { select: { id: true, accountName: true, platform: true } },
+              },
+            },
+          },
+          orderBy: { priority: 'asc' },
+        },
+        schedules: {
+          where: { status: 'ACTIVE' },
+          select: { nextRunAt: true },
+          orderBy: { nextRunAt: 'asc' },
+          take: 1,
+        },
+        _count: { select: { topics: true, videos: true, contents: true, schedules: true, channelAssignments: true } },
       },
     });
     if (!project) {
       return reply.code(404).send({ error: 'not_found', message: 'Project not found' });
     }
-    return { project };
+    const nextRunAt =
+      project.schedules.length > 0
+        ? project.schedules[0]!.nextRunAt
+        : null;
+    return { project: { ...project, nextRunAt } };
   });
 
   app.patch('/:id', async (request, reply) => {
@@ -66,6 +147,118 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
 
     const project = await prisma.project.update({ where: { id }, data: body });
     return { project };
+  });
+
+  app.put('/:id/config', async (request, reply) => {
+    const auth = getAuthUser(request);
+    const id = parseId((request.params as { id: string }).id);
+    const body = parse(ProjectConfigSchema, request.body);
+
+    const existing = await prisma.project.findFirst({ where: { id, userId: auth.id } });
+    if (!existing) {
+      return reply.code(404).send({ error: 'not_found', message: 'Project not found' });
+    }
+
+    const project = await prisma.project.update({ where: { id }, data: { config: body } });
+    return { project };
+  });
+
+  app.post('/:id/activate', async (request, reply) => {
+    const auth = getAuthUser(request);
+    const id = parseId((request.params as { id: string }).id);
+    const existing = await prisma.project.findFirst({ where: { id, userId: auth.id } });
+    if (!existing) {
+      return reply.code(404).send({ error: 'not_found', message: 'Project not found' });
+    }
+    const project = await prisma.project.update({ where: { id }, data: { status: 'ACTIVE' } });
+    return { project };
+  });
+
+  app.post('/:id/pause', async (request, reply) => {
+    const auth = getAuthUser(request);
+    const id = parseId((request.params as { id: string }).id);
+    const existing = await prisma.project.findFirst({ where: { id, userId: auth.id } });
+    if (!existing) {
+      return reply.code(404).send({ error: 'not_found', message: 'Project not found' });
+    }
+    const project = await prisma.project.update({ where: { id }, data: { status: 'PAUSED' } });
+    return { project };
+  });
+
+  app.get('/:id/channel-assignments', async (request, reply) => {
+    const auth = getAuthUser(request);
+    const id = parseId((request.params as { id: string }).id);
+    const existing = await prisma.project.findFirst({ where: { id, userId: auth.id } });
+    if (!existing) {
+      return reply.code(404).send({ error: 'not_found', message: 'Project not found' });
+    }
+    const assignments = await prisma.projectChannelAssignment.findMany({
+      where: { projectId: id },
+      include: {
+        channel: { include: { publishingAccount: { select: { accountName: true, platform: true } } } },
+      },
+      orderBy: [{ enabled: 'desc' }, { priority: 'asc' }],
+    });
+    return { assignments };
+  });
+
+  app.put('/:id/channel-assignments', async (request, reply) => {
+    const auth = getAuthUser(request);
+    const id = parseId((request.params as { id: string }).id);
+    const schema = z.object({
+      assignments: z.array(
+        z.object({
+          publishingChannelId: z.string().uuid(),
+          enabled: z.boolean().optional(),
+          priority: z.number().int().min(1).max(100).optional(),
+          captionFormat: z.string().max(2000).optional(),
+          hashtags: z.array(z.string()).optional(),
+          titleFormat: z.string().max(500).optional(),
+          descriptionTemplate: z.string().max(2000).optional(),
+        }),
+      ),
+    });
+    const body = parse(schema, request.body);
+
+    const project = await prisma.project.findFirst({ where: { id, userId: auth.id } });
+    if (!project) {
+      return reply.code(404).send({ error: 'not_found', message: 'Project not found' });
+    }
+
+    const channelIds = body.assignments.map((a) => a.publishingChannelId);
+    const channels = await prisma.publishingChannel.findMany({
+      where: { id: { in: channelIds }, project: { userId: auth.id } },
+    });
+    if (channels.length !== channelIds.length) {
+      return reply.code(403).send({ error: 'forbidden', message: 'Channel not in your projects' });
+    }
+
+    await prisma.$transaction([
+      prisma.projectChannelAssignment.deleteMany({ where: { projectId: id } }),
+      ...body.assignments.map((a) =>
+        prisma.projectChannelAssignment.create({
+          data: {
+            projectId: id,
+            publishingChannelId: a.publishingChannelId,
+            enabled: a.enabled ?? true,
+            priority: a.priority ?? 1,
+            captionFormat: a.captionFormat,
+            hashtags: a.hashtags,
+            titleFormat: a.titleFormat,
+            descriptionTemplate: a.descriptionTemplate,
+          },
+        }),
+      ),
+    ]);
+
+    const assignments = await prisma.projectChannelAssignment.findMany({
+      where: { projectId: id },
+      include: {
+        channel: { include: { publishingAccount: { select: { accountName: true, platform: true } } } },
+      },
+      orderBy: [{ enabled: 'desc' }, { priority: 'asc' }],
+    });
+    return { assignments };
   });
 
   app.delete('/:id', async (request, reply) => {

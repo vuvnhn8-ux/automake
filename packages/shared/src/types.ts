@@ -128,6 +128,8 @@ export const ChannelPlatformSchema = z.enum([
   'YOUTUBE',
   'TIKTOK',
   'INSTAGRAM',
+  'X',
+  'THREADS',
   'OTHER',
 ]);
 export type ChannelPlatform = z.infer<typeof ChannelPlatformSchema>;

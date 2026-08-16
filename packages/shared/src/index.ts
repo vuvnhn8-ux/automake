@@ -38,13 +38,17 @@ export {
 } from './schedule.js';
 export {
   PROVIDER_GROUPS,
+  PROVIDER_CATALOG,
   KEY_ENV_BY_PROVIDER,
   MODEL_ENV_BY_PROVIDER,
+  isOpenAICompatible,
+  catalogEndpoint,
 } from './providers.js';
 export type {
   ProviderGroup,
   ProviderOption,
   ProviderGroupInfo,
+  ProviderCatalogEntry,
 } from './providers.js';
 export {
   selectTopic,

@@ -27,6 +27,25 @@ export async function dashboardRoutes(app: FastifyInstance): Promise<void> {
       analytics.map((a) => [a.metric, a._sum?.value ?? 0]),
     );
 
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+
+    const [publishedToday, queued, processing, failedJobs, workers] = await Promise.all([
+      prisma.publishingJob.count({
+        where: { video: { project: { userId: auth.id } }, status: 'PUBLISHED', publishedAt: { gte: start } },
+      }),
+      prisma.publishingJob.count({
+        where: { video: { project: { userId: auth.id } }, status: 'PENDING', scheduledAt: null },
+      }),
+      prisma.publishingJob.count({
+        where: { video: { project: { userId: auth.id } }, status: { in: ['UPLOADING', 'PROCESSING'] } },
+      }),
+      prisma.publishingJob.count({
+        where: { video: { project: { userId: auth.id } }, status: 'FAILED' },
+      }),
+      prisma.workerHeartbeat.count({ where: { lastSeenAt: { gte: new Date(Date.now() - 45_000) } } }),
+    ]);
+
     return {
       stats: {
         totalVideos,
@@ -39,6 +58,14 @@ export async function dashboardRoutes(app: FastifyInstance): Promise<void> {
         activeSchedules,
       },
       engagement,
+      publishing: {
+        publishedToday,
+        queued,
+        scheduled: scheduledVideos,
+        processing,
+        failed: failedJobs,
+        workersOnline: workers,
+      },
     };
   });
 }

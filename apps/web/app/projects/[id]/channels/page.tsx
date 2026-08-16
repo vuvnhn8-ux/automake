@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import Shell from '@/components/Shell';
 import { api } from '@/lib/auth';
+import { useI18n } from '@/lib/i18n';
 
 interface Page {
   id: string;
@@ -30,6 +31,7 @@ const PLATFORMS = ['FACEBOOK', 'YOUTUBE', 'TIKTOK', 'INSTAGRAM', 'OTHER'];
 
 export default function ProjectChannelsPage() {
   const { id } = useParams<{ id: string }>();
+  const { t } = useI18n();
   const [channels, setChannels] = useState<Channel[]>([]);
   const [pages, setPages] = useState<Page[]>([]);
   const [error, setError] = useState('');
@@ -65,7 +67,7 @@ export default function ProjectChannelsPage() {
       setFacebookPageId('');
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create channel');
+      setError(err instanceof Error ? err.message : t('pchannels.createFailed'));
     }
   };
 
@@ -74,9 +76,9 @@ export default function ProjectChannelsPage() {
       <div className="spread" style={{ marginBottom: 16 }}>
         <div>
           <div className="muted" style={{ fontSize: 13 }}>
-            <Link href={`/projects/${id}`}>← Project</Link>
+            <Link href={`/projects/${id}`}>{t('pchannels.backProject')}</Link>
           </div>
-          <h2 style={{ margin: 0 }}>Channels</h2>
+          <h2 style={{ margin: 0 }}>{t('pchannels.title')}</h2>
         </div>
       </div>
 
@@ -84,14 +86,14 @@ export default function ProjectChannelsPage() {
 
       <form onSubmit={(e) => void create(e)} className="card" style={{ marginBottom: 24 }}>
         <div className="row">
-          <input placeholder="Channel name" value={name} onChange={(e) => setName(e.target.value)} style={{ flex: 2 }} />
+          <input placeholder={t('pchannels.namePlaceholder')} value={name} onChange={(e) => setName(e.target.value)} style={{ flex: 2 }} />
           <select value={platform} onChange={(e) => setPlatform(e.target.value)}>
             {PLATFORMS.map((p) => (
               <option key={p} value={p}>{p}</option>
             ))}
           </select>
           <select value={facebookPageId} onChange={(e) => setFacebookPageId(e.target.value)}>
-            <option value="">— Facebook page —</option>
+            <option value="">{t('pchannels.facebookPage')}</option>
             {pages.map((p) => (
               <option key={p.id} value={p.id}>{p.pageName}</option>
             ))}
@@ -102,10 +104,10 @@ export default function ProjectChannelsPage() {
             max={100}
             value={dailyVideoTarget}
             onChange={(e) => setDailyVideoTarget(Number(e.target.value))}
-            title="Daily video target"
+            title={t('pchannels.dailyTargetTitle')}
             style={{ width: 80 }}
           />
-          <button className="btn" type="submit" disabled={!name.trim()}>Create</button>
+          <button className="btn" type="submit" disabled={!name.trim()}>{t('pchannels.create')}</button>
         </div>
       </form>
 
@@ -116,21 +118,21 @@ export default function ProjectChannelsPage() {
               <div>
                 <strong>{c.name}</strong>
                 <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
-                  {c.platform} · {c.dailyVideoTarget}/day
+                  {c.platform} · {t('pchannels.perDay', { n: c.dailyVideoTarget })}
                   {c.facebookPage ? ` · → ${c.facebookPage.pageName}` : ''}
-                  {c.contentProfile ? ` · ${c.contentProfile.language} / ${c.contentProfile.tone}` : ' · no profile yet'}
+                  {c.contentProfile ? ` · ${c.contentProfile.language} / ${c.contentProfile.tone}` : ` · ${t('pchannels.noProfile')}`}
                 </div>
               </div>
               <div className="wrap">
-                <span className="badge accent">{c._count.series} series</span>
-                <span className="badge">{c._count.knowledge} KB</span>
-                <span className="badge">{c._count.contents} contents</span>
-                <span className={`badge ${c.isActive ? 'ok' : ''}`}>{c.isActive ? 'active' : 'off'}</span>
+                <span className="badge accent">{t('pchannels.series', { n: c._count.series })}</span>
+                <span className="badge">{t('pchannels.kb', { n: c._count.knowledge })}</span>
+                <span className="badge">{t('pchannels.contents', { n: c._count.contents })}</span>
+                <span className={`badge ${c.isActive ? 'ok' : ''}`}>{c.isActive ? t('pchannels.on') : t('pchannels.off')}</span>
               </div>
             </div>
           </Link>
         ))}
-        {channels.length === 0 && <div className="card muted">No channels yet. Create one above.</div>}
+        {channels.length === 0 && <div className="card muted">{t('pchannels.empty')}</div>}
       </div>
     </Shell>
   );

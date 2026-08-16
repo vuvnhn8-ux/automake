@@ -180,11 +180,25 @@ enum PublishingAccountStatus {
   DISCONNECTED
 }
 
+enum ProjectStatus {
+  ACTIVE
+  PAUSED
+}
+
+enum ChannelConnectionStatus {
+  CONNECTED
+  DISCONNECTED
+  ERROR
+  UNKNOWN
+}
+
 enum ChannelPlatform {
   FACEBOOK
   YOUTUBE
   TIKTOK
   INSTAGRAM
+  X
+  THREADS
   OTHER
 }
 
@@ -261,6 +275,10 @@ model Project {
   defaultVoiceProvider  String?
   defaultDurationSeconds Int                  @default(60)
   publishingMode        ProjectPublishingMode @default(MANUAL)
+  status                ProjectStatus         @default(ACTIVE)
+  dailyVideoTarget      Int                   @default(1)
+  timezone              String                @default("Asia/Tokyo")
+  config                Json?
   facebookPageId        String?               @db.Uuid
   isArchived            Boolean               @default(false)
   createdAt             DateTime              @default(now())
@@ -277,6 +295,7 @@ model Project {
   analytics     Analytics[]
   campaigns     ContentCampaign[]
   accounts      PublishingAccount[]
+  channelAssignments ProjectChannelAssignment[]
 
   @@index([userId])
 }
@@ -305,9 +324,13 @@ model PublishingChannel {
   name                  String
   platform              ChannelPlatform @default(FACEBOOK)
   description           String?
+  externalId            String?
   dailyVideoTarget      Int             @default(1)
   autoGenerationEnabled Boolean         @default(false)
   isActive              Boolean         @default(true)
+  connectionStatus      ChannelConnectionStatus @default(UNKNOWN)
+  tokenStatus           String?
+  lastCheckedAt         DateTime?
   facebookPageId        String?         @db.Uuid
   publishingAccountId   String?         @db.Uuid
   createdAt             DateTime        @default(now())
@@ -325,10 +348,35 @@ model PublishingChannel {
   publishingJobs   PublishingJob[]
   analytics        Analytics[]
   assignments      CampaignChannelAssignment[]
+  projectAssignments ProjectChannelAssignment[]
 
   @@index([projectId])
   @@index([facebookPageId])
   @@index([publishingAccountId])
+}
+
+// A channel is owned by the project that created it but can be *selected* by
+// any other project of the same user. Selection is per-project (enabled flag),
+// and channel-specific overrides live on the assignment row.
+model ProjectChannelAssignment {
+  id                     String   @id @default(uuid()) @db.Uuid
+  projectId              String   @db.Uuid
+  publishingChannelId    String   @db.Uuid
+  enabled                Boolean  @default(true)
+  priority               Int      @default(1)
+  captionFormat          String?
+  hashtags               String[] @default([])
+  titleFormat            String?
+  descriptionTemplate    String?
+  scheduleOverride       Json?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  project Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  channel PublishingChannel @relation(fields: [publishingChannelId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, publishingChannelId])
+  @@index([publishingChannelId])
 }
 
 model ChannelContentProfile {
@@ -703,6 +751,33 @@ model AIProvider {
 
   @@unique([projectId, type, provider, model])
   @@index([projectId])
+}
+
+// Per-provider runtime health/usage counters. One row per (group, provider).
+// Worker jobs increment these after every AI/media/voice call and write the
+// observed error class so the API/dashboard can show HEALTHY/DEGRADED/RATE
+// LIMITED/QUOTA EXHAUSTED/ERROR status and let the pool pick the next provider.
+model ProviderUsage {
+  id            String    @id @default(uuid()) @db.Uuid
+  group         String    // AI_TEXT | RESEARCH | IMAGE | VIDEO | VOICE
+  provider      String    // GEMINI | OPENAI | CLAUDE | ...
+  model         String?   @default("")
+  requests      Int       @default(0)
+  success       Int       @default(0)
+  failed        Int       @default(0)
+  rateLimited   Int       @default(0)
+  timeout       Int       @default(0)
+  fallbackEvents Int      @default(0)
+  lastError     String?
+  lastErrorClass String?
+  lastSuccessAt DateTime?
+  lastRequestAt DateTime?
+  health        String    @default("UNKNOWN") // HEALTHY | DEGRADED | RATE_LIMITED | QUOTA_EXHAUSTED | ERROR | DISABLED
+  updatedAt     DateTime  @updatedAt
+  createdAt     DateTime  @default(now())
+
+  @@unique([group, provider])
+  @@index([group])
 }
 
 model GenerationLog {

@@ -61,6 +61,7 @@ export {
   OpenAIProvider,
   ClaudeProvider,
   MockAIProvider,
+  OpenAICompatibleProvider,
 } from './providers/index.js';
 export { MockResearchProvider } from './research/mock.js';
 export { TavilyResearchProvider } from './research/tavily.js';
@@ -74,11 +75,21 @@ export {
   fetchWithTimeout,
   providerError,
 } from './types.js';
-export { extractJson, completeJson } from './util.js';
+export { extractJson, completeJson, completeJsonWithPool } from './util.js';
 export type { ResearchProvider, ResearchRequest } from './research/types.js';
 export type { SearchSource } from './research/types.js';
 export { ContentPromptBuilder, buildTopicSuggestionPrompt, PLATFORM_RULES } from './content-prompt.js';
 export { GeneratedTopicsSchema, GeneratedTopicSchema } from './content-prompt.js';
+export {
+  completeWithPool,
+  buildTextProvider,
+  textProviderPriority,
+  resolvePriority,
+  fallbackErrorClass,
+  type PoolUsageRecord,
+  type PoolResult,
+  type ProviderPoolOptions,
+} from './pool.js';
 export type {
   BuildPromptInput,
   ChannelProfileInput,

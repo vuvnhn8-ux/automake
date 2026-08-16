@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Shell from '@/components/Shell';
 import { api } from '@/lib/auth';
+import { useI18n } from '@/lib/i18n';
 
 interface WorkerRow {
   workerId: string;
@@ -16,13 +17,25 @@ interface WorkerRow {
   online: boolean;
 }
 
+interface Summary {
+  total: number;
+  online: number;
+  draining: number;
+  processing: number;
+}
+
 export default function WorkersPage() {
+  const { t } = useI18n();
   const [workers, setWorkers] = useState<WorkerRow[] | null>(null);
+  const [summary, setSummary] = useState<Summary | null>(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    api<{ workers: WorkerRow[] }>('/api/workers')
-      .then((d) => setWorkers(d.workers))
+    api<{ workers: WorkerRow[]; summary: Summary }>('/api/workers')
+      .then((d) => {
+        setWorkers(d.workers);
+        setSummary(d.summary);
+      })
       .catch((e) => setError(e.message));
   }, []);
 
@@ -37,21 +50,40 @@ export default function WorkersPage() {
   return (
     <Shell>
       <div className="spread" style={{ marginBottom: 20 }}>
-        <h2 style={{ margin: 0 }}>Workers</h2>
+        <h2 style={{ margin: 0 }}>{t('workers.title')}</h2>
       </div>
 
       <p className="muted" style={{ marginTop: 0 }}>
-        Heartbeat status for every worker in the fleet. A worker is online when
-        it has reported within the last 45 seconds.
+        {t('workers.subtitle')}
       </p>
 
+      {summary && (
+        <div className="stat" style={{ marginBottom: 24 }}>
+          <div className="stat-item">
+            <div className="value">{summary.total}</div>
+            <div className="label">{t('workers.total')}</div>
+          </div>
+          <div className="stat-item">
+            <div className="value">{summary.online}</div>
+            <div className="label">{t('workers.online')}</div>
+          </div>
+          <div className="stat-item">
+            <div className="value">{summary.draining}</div>
+            <div className="label">{t('workers.draining')}</div>
+          </div>
+          <div className="stat-item">
+            <div className="value">{summary.processing}</div>
+            <div className="label">{t('workers.processing')}</div>
+          </div>
+        </div>
+      )}
+
       {workers === null ? (
-        <p className="muted">Loading…</p>
+        <p className="muted">{t('common.loading')}</p>
       ) : workers.length === 0 ? (
         <div className="card">
           <p style={{ margin: 0 }}>
-            No workers have reported a heartbeat yet. Start a worker process and
-            it will appear here automatically.
+            {t('workers.empty')}
           </p>
         </div>
       ) : (
@@ -59,14 +91,14 @@ export default function WorkersPage() {
           <table>
             <thead>
               <tr>
-                <th>Worker</th>
-                <th>Hostname</th>
-                <th>Status</th>
-                <th>Current job</th>
-                <th>Version</th>
-                <th>Concurrency</th>
-                <th>FFmpeg</th>
-                <th>Last seen</th>
+                <th>{t('workers.worker')}</th>
+                <th>{t('workers.hostname')}</th>
+                <th>{t('workers.status')}</th>
+                <th>{t('workers.currentJob')}</th>
+                <th>{t('workers.version')}</th>
+                <th>{t('workers.concurrency')}</th>
+                <th>{t('workers.ffmpeg')}</th>
+                <th>{t('workers.lastSeen')}</th>
               </tr>
             </thead>
             <tbody>
@@ -86,13 +118,13 @@ export default function WorkersPage() {
                         color: w.online ? 'var(--ok, #137333)' : 'var(--muted)',
                       }}
                     >
-                      {w.online ? w.status : 'OFFLINE'}
+                      {w.online ? w.status : t('workers.offline')}
                     </span>
                   </td>
                   <td>{w.currentJob ?? '—'}</td>
                   <td>{w.version ?? '—'}</td>
                   <td>{w.concurrency}</td>
-                  <td>{w.ffmpegAvailable ? 'yes' : 'no'}</td>
+                  <td>{w.ffmpegAvailable ? t('workers.yes') : t('workers.no')}</td>
                   <td>{new Date(w.lastSeenAt).toLocaleString()}</td>
                 </tr>
               ))}

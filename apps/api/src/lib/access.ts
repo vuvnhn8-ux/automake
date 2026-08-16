@@ -13,6 +13,10 @@ export async function getProject(userId: string, projectId: string) {
 export async function getChannel(userId: string, channelId: string) {
   return prisma.publishingChannel.findFirstOrThrow({
     where: { id: channelId, project: { userId } },
+    include: {
+      facebookPage: { select: { pageId: true, accessTokenEnc: true } },
+      publishingAccount: { select: { id: true, accountName: true, platform: true, credentials: true, metadata: true } },
+    },
   });
 }
 

@@ -29,7 +29,7 @@ const envSchema = z.object({
   JWT_REFRESH_TTL: z.string().default('7d'),
 
   AI_TEXT_PROVIDER: z
-    .enum(['GEMINI', 'OPENAI', 'CLAUDE', 'MOCK'])
+    .enum(['GEMINI', 'OPENAI', 'CLAUDE', 'GROQ', 'DEEPSEEK', 'MISTRAL', 'XAI', 'COHERE', 'OPENROUTER', 'TOGETHER', 'CEREBRAS', 'FIREWORKS', 'QWEN', 'HUGGINGFACE', 'MOCK'])
     .default('MOCK'),
   GEMINI_API_KEY: z.string().default(''),
   GEMINI_MODEL: z.string().default('gemini-2.0-flash'),
@@ -174,3 +174,4 @@ export function isTest(): boolean {
 
 export * from './cipher.js';
 export * from './provider-config.js';
+export * from './telegram.js';

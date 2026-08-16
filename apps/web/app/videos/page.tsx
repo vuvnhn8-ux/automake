@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Shell from '@/components/Shell';
 import { api } from '@/lib/auth';
+import { useI18n } from '@/lib/i18n';
 
 interface Video {
   id: string;
@@ -20,6 +21,7 @@ interface Video {
 }
 
 export default function VideosPage() {
+  const { t } = useI18n();
   const [videos, setVideos] = useState<Video[]>([]);
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
@@ -36,10 +38,10 @@ export default function VideosPage() {
   return (
     <Shell>
       <div className="spread" style={{ marginBottom: 20 }}>
-        <h2 style={{ margin: 0 }}>Videos</h2>
+        <h2 style={{ margin: 0 }}>{t('videos.title')}</h2>
         <div className="row">
           <select value={status} onChange={(e) => setStatus(e.target.value)} style={{ width: 'auto' }}>
-            <option value="">All statuses</option>
+            <option value="">{t('videos.allStatuses')}</option>
             <option>DRAFT</option>
             <option>GENERATING</option>
             <option>RENDERING</option>
@@ -56,13 +58,13 @@ export default function VideosPage() {
         <table>
           <thead>
             <tr>
-              <th>Title</th>
-              <th>Project</th>
-              <th>Status</th>
-              <th>Template</th>
-              <th>Quality</th>
-              <th>Created</th>
-              <th>Publish</th>
+              <th>{t('videos.titleCol')}</th>
+              <th>{t('videos.project')}</th>
+              <th>{t('videos.status')}</th>
+              <th>{t('videos.template')}</th>
+              <th>{t('videos.quality')}</th>
+              <th>{t('videos.created')}</th>
+              <th>{t('videos.publish')}</th>
             </tr>
           </thead>
           <tbody>
@@ -78,7 +80,7 @@ export default function VideosPage() {
                   <span className={`badge ${badge(v.status)}`}>{v.status}</span>
                   {v.publishingJobs.map((j) => (
                     <div key={j.id} className="mono" style={{ marginTop: 2 }}>
-                      post: <span className={`badge ${badge(j.status)}`}>{j.status}</span>
+                      {t('videos.post')} <span className={`badge ${badge(j.status)}`}>{j.status}</span>
                     </div>
                   ))}
                 </td>
@@ -90,7 +92,7 @@ export default function VideosPage() {
             ))}
             {videos.length === 0 && (
               <tr>
-                <td colSpan={7} className="muted">No videos yet.</td>
+                <td colSpan={7} className="muted">{t('videos.empty')}</td>
               </tr>
             )}
           </tbody>

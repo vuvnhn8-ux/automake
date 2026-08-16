@@ -108,6 +108,12 @@ export const ScheduledRunPayloadSchema = z.object({
 });
 export type ScheduledRunPayload = z.infer<typeof ScheduledRunPayloadSchema>;
 
+export const TelegramDailyReportPayloadSchema = z.object({
+  date: z.string(),
+  timezone: z.string().optional(),
+});
+export type TelegramDailyReportPayload = z.infer<typeof TelegramDailyReportPayloadSchema>;
+
 export const JOB_PAYLOAD_SCHEMAS: Record<string, z.ZodTypeAny> = {
   'generate-content': GenerateContentPayloadSchema,
   'generate-scenes': GenerateScenesPayloadSchema,
@@ -119,6 +125,7 @@ export const JOB_PAYLOAD_SCHEMAS: Record<string, z.ZodTypeAny> = {
   'quality-check': QualityCheckPayloadSchema,
   'publish-video': PublishVideoPayloadSchema,
   'scheduled-run': ScheduledRunPayloadSchema,
+  'telegram-daily-report': TelegramDailyReportPayloadSchema,
 };
 
 export function validateJobPayload(jobName: string, payload: Record<string, unknown>): void {
@@ -140,6 +147,7 @@ export const JOB_QUEUE_MAP: Record<string, string> = {
   'quality-check': 'qa',
   'publish-video': 'publish',
   'scheduled-run': 'schedule',
+  'telegram-daily-report': 'telegram',
 };
 
 export function queueForJob(jobName: string): string {

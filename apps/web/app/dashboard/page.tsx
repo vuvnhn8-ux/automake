@@ -3,7 +3,9 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Shell from '@/components/Shell';
+import PublishingJobsMonitor from '@/components/PublishingJobsMonitor';
 import { api } from '@/lib/auth';
+import { useI18n } from '@/lib/i18n';
 
 interface DashboardData {
   stats: {
@@ -20,6 +22,7 @@ interface DashboardData {
 }
 
 export default function DashboardPage() {
+  const { t } = useI18n();
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState('');
 
@@ -42,9 +45,9 @@ export default function DashboardPage() {
   return (
     <Shell>
       <div className="spread" style={{ marginBottom: 20 }}>
-        <h2 style={{ margin: 0 }}>Dashboard</h2>
+        <h2 style={{ margin: 0 }}>{t('dash.title')}</h2>
         <Link href="/projects" className="btn small">
-          New project
+          {t('dash.newProject')}
         </Link>
       </div>
 
@@ -52,42 +55,42 @@ export default function DashboardPage() {
         <div className="stat" style={{ marginBottom: 24 }}>
           <div className="stat-item">
             <div className="value">{s.projects}</div>
-            <div className="label">Projects</div>
+            <div className="label">{t('dash.projects')}</div>
           </div>
           <div className="stat-item">
             <div className="value">{s.totalVideos}</div>
-            <div className="label">Total videos</div>
+            <div className="label">{t('dash.totalVideos')}</div>
           </div>
           <div className="stat-item">
             <div className="value">{s.publishedVideos}</div>
-            <div className="label">Ready to publish</div>
+            <div className="label">{t('dash.readyToPublish')}</div>
           </div>
           <div className="stat-item">
             <div className="value">{s.scheduledVideos}</div>
-            <div className="label">Scheduled posts</div>
+            <div className="label">{t('dash.scheduledPosts')}</div>
           </div>
           <div className="stat-item">
             <div className="value">{s.activeSchedules}</div>
-            <div className="label">Active schedules</div>
+            <div className="label">{t('dash.activeSchedules')}</div>
           </div>
           <div className="stat-item">
             <div className="value">{s.topics}</div>
-            <div className="label">Active topics</div>
+            <div className="label">{t('dash.activeTopics')}</div>
           </div>
           <div className="stat-item">
             <div className="value">{s.facebookPages}</div>
-            <div className="label">Connected pages</div>
+            <div className="label">{t('dash.connectedPages')}</div>
           </div>
           <div className="stat-item">
             <div className="value">{s.failedVideos}</div>
-            <div className="label">Failed videos</div>
+            <div className="label">{t('dash.failedVideos')}</div>
           </div>
         </div>
       )}
 
       {data?.engagement && (
         <div className="card">
-          <h3 style={{ marginTop: 0 }}>Engagement (lifecycle totals)</h3>
+          <h3 style={{ marginTop: 0 }}>{t('dash.engagement')}</h3>
           <table>
             <thead>
               <tr>
@@ -106,6 +109,8 @@ export default function DashboardPage() {
           </table>
         </div>
       )}
+
+      <PublishingJobsMonitor />
     </Shell>
   );
 }

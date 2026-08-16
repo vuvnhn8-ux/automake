@@ -1,6 +1,6 @@
 import { prisma } from '@avf/database';
-import { createAIProvider, createResearchProvider, completeJson, ContentPromptBuilder } from '@avf/ai';
-import { getActiveProvider, getProviderSetting, refreshProviderConfig } from '@avf/config';
+import { createResearchProvider, completeJsonWithPool, ContentPromptBuilder } from '@avf/ai';
+import { getActiveProvider, getProviderSetting, recordProviderUsage, refreshProviderConfig } from '@avf/config';
 import type {
   ChannelProfileInput,
   CampaignProfileInput,
@@ -70,7 +70,6 @@ export async function handleGenerateContent(
         }))?.providerOverrides as { ai?: string } | null | undefined)?.ai
       : undefined;
     await refreshProviderConfig();
-    const ai = createAIProvider(providerOverride);
     const researchActive = getActiveProvider('RESEARCH', process.env.RESEARCH_PROVIDER ?? 'MOCK') === 'TAVILY';
     const researchSetting = getProviderSetting('TAVILY');
     const researchEnabled = researchActive && (researchSetting?.enabled ?? true);
@@ -238,12 +237,18 @@ export async function handleGenerateContent(
         .join('\n\n');
     }
 
-    const { data, usage } = await completeJson<ScriptOutput>(
-      ai,
+    const { data, usage } = await completeJsonWithPool<ScriptOutput>(
       system,
       user,
       ScriptOutputSchema as ZodType<ScriptOutput>,
-      { requestId: contentId },
+      {
+        requestId: contentId,
+        pool: {
+          group: 'AI_TEXT',
+          priority: providerOverride ? [providerOverride] : undefined,
+          onUsage: (record) => void recordProviderUsage({ ...record }),
+        },
+      },
     );
 
     // Persist the script and scene breakdown (replace existing on regenerate).

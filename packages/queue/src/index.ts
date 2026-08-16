@@ -28,6 +28,7 @@ export type {
   QualityCheckPayload,
   PublishVideoPayload,
   ScheduledRunPayload,
+  TelegramDailyReportPayload,
 } from './types.js';
 export {
   JOB_PAYLOAD_SCHEMAS,

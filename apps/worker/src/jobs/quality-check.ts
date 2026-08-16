@@ -146,6 +146,28 @@ export async function handleQualityCheck(
           }
         }
       } else if (video.project.publishingMode === 'FULL_AUTOMATIC') {
+        // Project flow: publish to every enabled channel assigned to this
+        // project. One video -> N publishing jobs (one per destination), so
+        // each channel fails and retries independently. The project's
+        // dailyVideoTarget is the generation quota; destinations all receive
+        // the same video.
+        const assignments = await prisma.projectChannelAssignment.findMany({
+          where: { projectId, enabled: true, channel: { isActive: true } },
+          select: { publishingChannelId: true },
+        });
+        if (assignments.length > 0) {
+          for (const assignment of assignments) {
+            const publishingJob = await prisma.publishingJob.create({
+              data: { videoId, channelId: assignment.publishingChannelId, status: 'PENDING' },
+            });
+            await ctx.queue.add('publish-video', {
+              publishingJobId: publishingJob.id,
+              videoId,
+              projectId,
+            });
+          }
+          return;
+        }
         const page = video.project.facebookPageId
           ? await prisma.facebookPage.findFirst({
               where: { id: video.project.facebookPageId, status: 'CONNECTED' },

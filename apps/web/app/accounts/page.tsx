@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Shell from '@/components/Shell';
 import { api } from '@/lib/auth';
+import { useI18n } from '@/lib/i18n';
 
 interface Project {
   id: string;
@@ -24,6 +25,7 @@ interface Account {
 }
 
 export default function AccountsPage() {
+  const { t } = useI18n();
   const [projects, setProjects] = useState<Project[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [projectId, setProjectId] = useState('');
@@ -70,7 +72,7 @@ export default function AccountsPage() {
       setCredentials('');
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create account');
+      setError(err instanceof Error ? err.message : t('accounts.createFailed'));
     } finally {
       setCreating(false);
     }
@@ -81,7 +83,7 @@ export default function AccountsPage() {
       await api(`/api/accounts/${id}`, { method: 'DELETE' });
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete');
+      setError(err instanceof Error ? err.message : t('accounts.deleteFailed'));
     }
   };
 
@@ -90,8 +92,8 @@ export default function AccountsPage() {
   return (
     <Shell>
       <div className="spread" style={{ marginBottom: 20 }}>
-        <h2 style={{ margin: 0 }}>Publishing Accounts</h2>
-        <span className="muted">Credentials are AES-256-GCM encrypted and never returned</span>
+        <h2 style={{ margin: 0 }}>{t('accounts.title')}</h2>
+        <span className="muted">{t('accounts.subtitle')}</span>
       </div>
 
       <form onSubmit={(e) => void create(e)} className="card" style={{ marginBottom: 24 }}>
@@ -110,19 +112,19 @@ export default function AccountsPage() {
               </option>
             ))}
           </select>
-          <input placeholder="Account name" value={accountName} onChange={(e) => setAccountName(e.target.value)} style={{ flex: 1 }} />
+          <input placeholder={t('accounts.namePlaceholder')} value={accountName} onChange={(e) => setAccountName(e.target.value)} style={{ flex: 1 }} />
         </div>
         <div className="row" style={{ marginTop: 10 }}>
-          <input placeholder="External account id (optional)" value={externalAccountId} onChange={(e) => setExternalAccountId(e.target.value)} style={{ flex: 1 }} />
+          <input placeholder={t('accounts.externalIdPlaceholder')} value={externalAccountId} onChange={(e) => setExternalAccountId(e.target.value)} style={{ flex: 1 }} />
           <input
             type="password"
-            placeholder="Access token / credentials"
+            placeholder={t('accounts.credentialsPlaceholder')}
             value={credentials}
             onChange={(e) => setCredentials(e.target.value)}
             style={{ flex: 2 }}
           />
           <button className="btn" type="submit" disabled={creating || !accountName.trim() || !credentials.trim() || !projectId}>
-            Add
+            {t('accounts.add')}
           </button>
         </div>
         {error && <div className="error">{error}</div>}
@@ -137,22 +139,22 @@ export default function AccountsPage() {
                   <strong>{a.accountName}</strong>
                 </Link>
                 <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
-                  {a.platform} · {a.project.name} · {a.externalAccountId ?? 'no external id'}
+                  {a.platform} · {a.project.name} · {a.externalAccountId ?? t('accounts.noExternalId')}
                 </div>
                 <div className="mono" style={{ marginTop: 4 }}>{a.credentialsMask}</div>
               </div>
               <div className="wrap">
                 <span className={`badge ${statusBadge(a.status)}`}>{a.status}</span>
-                <span className="badge accent">{a._count.channels} channels</span>
+                <span className="badge accent">{t('accounts.channels', { n: a._count.channels })}</span>
                 <button className="btn danger small" onClick={() => void remove(a.id)}>
-                  Delete
+                  {t('accounts.delete')}
                 </button>
               </div>
             </div>
           </div>
         ))}
         {accounts.length === 0 && (
-          <div className="card muted">No publishing accounts yet. Add one above to enable non-Facebook destinations.</div>
+          <div className="card muted">{t('accounts.empty')}</div>
         )}
       </div>
     </Shell>

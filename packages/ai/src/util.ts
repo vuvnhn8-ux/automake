@@ -1,6 +1,7 @@
 import type { ZodType } from 'zod';
 import { AIErrorCode } from './types.js';
 import { providerError } from './types.js';
+import { completeWithPool, type ProviderPoolOptions } from './pool.js';
 
 /**
  * Best-effort extraction of a JSON payload from an AI response.
@@ -84,6 +85,78 @@ export async function completeJson<T>(
       outputTokens: result.outputTokens,
       estimatedCost: result.estimatedCost,
       durationMs: result.durationMs,
+    },
+  };
+}
+
+/**
+ * Runs a completion through the provider failover pool and validates the
+ * result against a zod schema. Retryable provider failures fall back to the
+ * next provider in the priority chain instead of failing the job.
+ */
+export async function completeJsonWithPool<T>(
+  system: string,
+  user: string,
+  schema: ZodType<T>,
+  opts?: { requestId?: string; pool?: ProviderPoolOptions },
+): Promise<{
+  data: T;
+  usage: {
+    provider: string;
+    model: string;
+    inputTokens: number;
+    outputTokens: number;
+    estimatedCost: number;
+    durationMs: number;
+    fallbackCount: number;
+  };
+}> {
+  const { result, fallbackCount } = await completeWithPool(
+    {
+      system,
+      user,
+      jsonMode: true,
+      jsonSchemaDescription: describeZodSchema(schema),
+      requestId: opts?.requestId,
+    },
+    opts?.pool,
+  );
+
+  let parsed: unknown;
+  try {
+    parsed = extractJson(result.text);
+  } catch {
+    throw providerError(
+      AIErrorCode.INVALID_REQUEST,
+      result.provider,
+      'Model output could not be parsed as JSON',
+      { model: result.model },
+    );
+  }
+
+  const validation = schema.safeParse(parsed);
+  if (!validation.success) {
+    throw providerError(
+      AIErrorCode.INVALID_REQUEST,
+      result.provider,
+      `Model output failed schema validation: ${validation.error.issues
+        .slice(0, 5)
+        .map((i) => `${i.path.join('.')}: ${i.message}`)
+        .join('; ')}`,
+      { model: result.model },
+    );
+  }
+
+  return {
+    data: validation.data,
+    usage: {
+      provider: result.provider,
+      model: result.model,
+      inputTokens: result.inputTokens,
+      outputTokens: result.outputTokens,
+      estimatedCost: result.estimatedCost,
+      durationMs: result.durationMs,
+      fallbackCount,
     },
   };
 }

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Shell from '@/components/Shell';
 import { api } from '@/lib/auth';
+import { useI18n } from '@/lib/i18n';
 
 interface Channel {
   id: string;
@@ -76,6 +77,7 @@ export default function CampaignDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const id = params.id;
+  const { t } = useI18n();
 
   const [campaign, setCampaign] = useState<CampaignDetail | null>(null);
   const [channels, setChannels] = useState<Channel[]>([]);
@@ -164,10 +166,10 @@ export default function CampaignDetailPage() {
           providerOverrides: providerAI ? { ai: providerAI } : undefined,
         },
       });
-      setNotice('Campaign profile saved');
+      setNotice(t('cdetail.profileSaved'));
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save');
+      setError(err instanceof Error ? err.message : t('cdetail.saveFailed'));
     } finally {
       setBusy(false);
     }
@@ -178,10 +180,12 @@ export default function CampaignDetailPage() {
     setNotice('');
     try {
       await api(`/api/campaigns/${id}/${status.toLowerCase()}`, { method: 'POST' });
-      setNotice(`Campaign ${status.toLowerCase()}d`);
+      setNotice(
+        status === 'activate' ? t('cdetail.activated') : status === 'pause' ? t('cdetail.pausedMsg') : t('cdetail.archivedMsg'),
+      );
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed');
+      setError(err instanceof Error ? err.message : t('cdetail.failed'));
     }
   };
 
@@ -199,10 +203,10 @@ export default function CampaignDetailPage() {
         body: { assignments: next },
       });
       setSelectedChannel('');
-      setNotice('Assignments updated');
+      setNotice(t('cdetail.assignmentsUpdated'));
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update assignments');
+      setError(err instanceof Error ? err.message : t('cdetail.assignUpdateFailed'));
     }
   };
 
@@ -223,7 +227,7 @@ export default function CampaignDetailPage() {
       });
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed');
+      setError(err instanceof Error ? err.message : t('cdetail.failed'));
     }
   };
 
@@ -238,7 +242,7 @@ export default function CampaignDetailPage() {
       setSeriesName('');
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create series');
+      setError(err instanceof Error ? err.message : t('cdetail.seriesCreateFailed'));
     }
   };
 
@@ -248,7 +252,7 @@ export default function CampaignDetailPage() {
   };
 
   const addTopic = async (seriesId: string) => {
-    const name = window.prompt('Topic name');
+    const name = window.prompt(t('cdetail.topicPrompt'));
     if (!name) return;
     try {
       await api(`/api/campaigns/${id}/series/${seriesId}/topics`, {
@@ -257,7 +261,7 @@ export default function CampaignDetailPage() {
       });
       loadTopics(seriesId);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to add topic');
+      setError(err instanceof Error ? err.message : t('cdetail.topicAddFailed'));
     }
   };
 
@@ -270,10 +274,10 @@ export default function CampaignDetailPage() {
         method: 'POST',
         body: { seriesId, count: 10 },
       });
-      setNotice(`Generated ${d.created.length} topics`);
+      setNotice(t('cdetail.generatedTopics', { n: d.created.length }));
       loadTopics(seriesId);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to generate topics');
+      setError(err instanceof Error ? err.message : t('cdetail.genTopicsFailed'));
     } finally {
       setBusy(false);
     }
@@ -291,7 +295,7 @@ export default function CampaignDetailPage() {
       setKContent('');
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to add knowledge');
+      setError(err instanceof Error ? err.message : t('cdetail.knowledgeAddFailed'));
     }
   };
 
@@ -300,7 +304,7 @@ export default function CampaignDetailPage() {
       await api(`/api/campaign-knowledge/${kid}`, { method: 'DELETE' });
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete');
+      setError(err instanceof Error ? err.message : t('cdetail.deleteFailed'));
     }
   };
 
@@ -314,9 +318,9 @@ export default function CampaignDetailPage() {
         { method: 'POST', body: { count: 1 } },
       );
       const total = d.concepts.length + Object.values(d.variants).reduce((n, v) => n + v.length, 0);
-      setNotice(`Enqueued ${total} content item(s) (${d.concepts.length} concept + variants)`);
+      setNotice(t('cdetail.enqueued', { total, concepts: d.concepts.length }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to generate');
+      setError(err instanceof Error ? err.message : t('cdetail.generateFailed'));
     } finally {
       setBusy(false);
     }
@@ -325,7 +329,7 @@ export default function CampaignDetailPage() {
   if (!campaign) {
     return (
       <Shell>
-        <div className="hero">Loading…</div>
+        <div className="hero">{t('cdetail.loading')}</div>
       </Shell>
     );
   }
@@ -335,24 +339,24 @@ export default function CampaignDetailPage() {
       <div className="spread" style={{ marginBottom: 20 }}>
         <div>
           <button className="btn secondary small" onClick={() => router.push('/campaigns')}>
-            ← Campaigns
+            {t('cdetail.back')}
           </button>
           <h2 style={{ margin: '10px 0 0' }}>{campaign.name}</h2>
           <div className="wrap" style={{ marginTop: 8 }}>
             <span className={`badge ${campaign.status === 'ACTIVE' ? 'ok' : ''}`}>{campaign.status}</span>
             {campaign.status === 'DRAFT' && (
               <button className="btn small" onClick={() => void changeStatus('activate')}>
-                Activate
+                {t('cdetail.activate')}
               </button>
             )}
             {campaign.status === 'ACTIVE' && (
               <button className="btn secondary small" onClick={() => void changeStatus('pause')}>
-                Pause
+                {t('cdetail.pause')}
               </button>
             )}
             {campaign.status !== 'ARCHIVED' && (
               <button className="btn secondary small" onClick={() => void changeStatus('archive')}>
-                Archive
+                {t('cdetail.archive')}
               </button>
             )}
           </div>
@@ -363,73 +367,73 @@ export default function CampaignDetailPage() {
       {notice && <div className="muted" style={{ marginBottom: 12, color: 'var(--ok)' }}>{notice}</div>}
 
       <form onSubmit={(e) => void saveProfile(e)} className="card" style={{ marginBottom: 24 }}>
-        <h3 style={{ marginTop: 0 }}>Content profile</h3>
+        <h3 style={{ marginTop: 0 }}>{t('cdetail.contentProfile')}</h3>
         <div className="row">
           <div className="field" style={{ flex: 1 }}>
-            <label>Audience</label>
+            <label>{t('cdetail.audience')}</label>
             <input value={profile.audience} onChange={(e) => setProfile({ ...profile, audience: e.target.value })} placeholder="e.g. Tech enthusiasts in Japan" />
           </div>
           <div className="field" style={{ flex: 1 }}>
-            <label>Language</label>
+            <label>{t('cdetail.language')}</label>
             <input value={profile.language} onChange={(e) => setProfile({ ...profile, language: e.target.value })} placeholder="ja-JP" />
           </div>
           <div className="field" style={{ flex: 1 }}>
-            <label>Tone</label>
+            <label>{t('cdetail.tone')}</label>
             <input value={profile.tone} onChange={(e) => setProfile({ ...profile, tone: e.target.value })} placeholder="professional" />
           </div>
         </div>
         <div className="field">
-          <label>Description</label>
+          <label>{t('cdetail.description')}</label>
           <textarea rows={2} value={profile.description} onChange={(e) => setProfile({ ...profile, description: e.target.value })} />
         </div>
         <div className="row">
           <div className="field" style={{ flex: 1 }}>
-            <label>Keywords (comma separated)</label>
+            <label>{t('cdetail.keywords')}</label>
             <input value={profile.keywords} onChange={(e) => setProfile({ ...profile, keywords: e.target.value })} />
           </div>
           <div className="field" style={{ flex: 1 }}>
-            <label>Excluded topics (comma separated)</label>
+            <label>{t('cdetail.excludedTopics')}</label>
             <input value={profile.excludedTopics} onChange={(e) => setProfile({ ...profile, excludedTopics: e.target.value })} />
           </div>
         </div>
         <div className="row">
           <div className="field" style={{ flex: 1 }}>
-            <label>CTA</label>
+            <label>{t('cdetail.cta')}</label>
             <input value={profile.cta} onChange={(e) => setProfile({ ...profile, cta: e.target.value })} placeholder="Follow for daily updates" />
           </div>
           <div className="field" style={{ flex: 1 }}>
-            <label>Daily video target (0 = unlimited)</label>
+            <label>{t('cdetail.dailyTarget')}</label>
             <input type="number" min={0} value={dailyVideoTarget} onChange={(e) => setDailyVideoTarget(Number(e.target.value))} />
           </div>
           <div className="field" style={{ flex: 1 }}>
-            <label>AI provider override</label>
+            <label>{t('cdetail.aiProvider')}</label>
             <input value={providerAI} onChange={(e) => setProviderAI(e.target.value)} placeholder="GEMINI / OPENAI / CLAUDE" />
           </div>
         </div>
         <div className="field">
-          <label>AI instructions</label>
+          <label>{t('cdetail.aiInstructions')}</label>
           <textarea rows={3} value={aiInstructions} onChange={(e) => setAiInstructions(e.target.value)} placeholder="Brand safety, sourcing rules, formats to avoid…" />
         </div>
         <div className="row">
           <label style={{ margin: 0 }}>
             <input type="checkbox" checked={autoPublish} onChange={(e) => setAutoPublish(e.target.checked)} style={{ width: 'auto', marginRight: 8 }} />
-            Auto-publish to all enabled channels when QA passes
+            {t('cdetail.autoPublish')}
           </label>
           <button className="btn" type="submit" disabled={busy}>
-            Save profile
+            {t('cdetail.saveProfile')}
           </button>
           <button className="btn secondary" type="button" onClick={() => void generate()} disabled={busy}>
-            Generate 1 content now
+            {t('cdetail.generateNow')}
           </button>
         </div>
       </form>
 
       <div className="card" style={{ marginBottom: 24 }}>
         <div className="spread">
-          <h3 style={{ margin: 0 }}>Channel assignments</h3>
+          <h3 style={{ margin: 0 }}>{t('cdetail.assignments')}</h3>
           <div className="row">
             <select value={selectedChannel} onChange={(e) => setSelectedChannel(e.target.value)} style={{ width: 280 }}>
-              <option value="">Select a channel…</option>
+              <option value="">{t('cdetail.selectChannel')}</option>
               {channels
                 .filter((c) => !assignments.some((a) => a.channel.id === c.id))
                 .map((c) => (
@@ -439,19 +443,19 @@ export default function CampaignDetailPage() {
                 ))}
             </select>
             <button className="btn small" onClick={() => void addAssignment()} disabled={!selectedChannel}>
-              Add
+              {t('cdetail.add')}
             </button>
           </div>
         </div>
         <table style={{ marginTop: 12 }}>
           <thead>
             <tr>
-              <th>Channel</th>
-              <th>Platform</th>
-              <th>Priority</th>
-              <th>Language override</th>
-              <th>Caption instructions</th>
-              <th>Enabled</th>
+              <th>{t('cdetail.channel')}</th>
+              <th>{t('cdetail.platform')}</th>
+              <th>{t('cdetail.priority')}</th>
+              <th>{t('cdetail.langOverride')}</th>
+              <th>{t('cdetail.captionInstructions')}</th>
+              <th>{t('cdetail.enabled')}</th>
             </tr>
           </thead>
           <tbody>
@@ -468,7 +472,7 @@ export default function CampaignDetailPage() {
                 </td>
                 <td>
                   <button className={`btn small ${a.enabled ? 'secondary' : ''}`} onClick={() => void toggleAssignment(a)}>
-                    {a.enabled ? 'On' : 'Off'}
+                    {a.enabled ? t('cdetail.on') : t('cdetail.off')}
                   </button>
                 </td>
               </tr>
@@ -476,7 +480,7 @@ export default function CampaignDetailPage() {
             {assignments.length === 0 && (
               <tr>
                 <td colSpan={6} className="muted">
-                  No channels assigned yet.
+                  {t('cdetail.noAssignments')}
                 </td>
               </tr>
             )}
@@ -485,11 +489,11 @@ export default function CampaignDetailPage() {
       </div>
 
       <div className="card" style={{ marginBottom: 24 }}>
-        <h3 style={{ marginTop: 0 }}>Series</h3>
+        <h3 style={{ marginTop: 0 }}>{t('cdetail.series')}</h3>
         <form className="row" onSubmit={(e) => void addSeries(e)} style={{ marginBottom: 12 }}>
-          <input placeholder="Series name" value={seriesName} onChange={(e) => setSeriesName(e.target.value)} style={{ flex: 1 }} />
+          <input placeholder={t('cdetail.seriesName')} value={seriesName} onChange={(e) => setSeriesName(e.target.value)} style={{ flex: 1 }} />
           <button className="btn small" type="submit" disabled={!seriesName.trim()}>
-            Add series
+            {t('cdetail.addSeries')}
           </button>
         </form>
         {seriesList.map((s) => (
@@ -498,29 +502,29 @@ export default function CampaignDetailPage() {
               <div>
                 <strong>{s.name}</strong>
                 <span className="muted" style={{ marginLeft: 10, fontSize: 13 }}>
-                  {s._count.topics} topics · {s._count.contents} contents
+                  {t('cdetail.seriesCount', { topics: s._count.topics, contents: s._count.contents })}
                 </span>
               </div>
               <div className="row">
                 <button className="btn secondary small" onClick={() => void generateTopics(s.id)} disabled={busy}>
-                  Generate topics (AI)
+                  {t('cdetail.generateTopics')}
                 </button>
                 <button className="btn secondary small" onClick={() => void addTopic(s.id)}>
-                  Add topic
+                  {t('cdetail.addTopic')}
                 </button>
               </div>
             </div>
             <button className="btn secondary small" style={{ marginTop: 10 }} onClick={() => void loadTopics(s.id)}>
-              Toggle topics
+              {t('cdetail.toggleTopics')}
             </button>
             <div style={{ marginTop: 8 }}>
-              {(topicsBySeries[s.id] ?? []).map((t) => (
-                <span key={t.id} className="badge" style={{ marginRight: 6, marginBottom: 6 }}>
-                  {t.name} ({t.usedCount})
+              {(topicsBySeries[s.id] ?? []).map((topic) => (
+                <span key={topic.id} className="badge" style={{ marginRight: 6, marginBottom: 6 }}>
+                  {topic.name} ({topic.usedCount})
                 </span>
               ))}
               {topicsBySeries[s.id] && topicsBySeries[s.id].length === 0 && (
-                <span className="muted">No topics yet.</span>
+                <span className="muted">{t('cdetail.noTopics')}</span>
               )}
             </div>
           </div>
@@ -528,12 +532,12 @@ export default function CampaignDetailPage() {
       </div>
 
       <div className="card" style={{ marginBottom: 24 }}>
-        <h3 style={{ marginTop: 0 }}>Knowledge base (isolated per campaign)</h3>
+        <h3 style={{ marginTop: 0 }}>{t('cdetail.knowledgeBase')}</h3>
         <form className="row" onSubmit={(e) => void addKnowledge(e)} style={{ marginBottom: 12 }}>
-          <input placeholder="Title" value={kTitle} onChange={(e) => setKTitle(e.target.value)} style={{ flex: 1 }} />
-          <input placeholder="Content (optional)" value={kContent} onChange={(e) => setKContent(e.target.value)} style={{ flex: 2 }} />
+          <input placeholder={t('cdetail.title')} value={kTitle} onChange={(e) => setKTitle(e.target.value)} style={{ flex: 1 }} />
+          <input placeholder={t('cdetail.contentOptional')} value={kContent} onChange={(e) => setKContent(e.target.value)} style={{ flex: 2 }} />
           <button className="btn small" type="submit" disabled={!kTitle.trim()}>
-            Add
+            {t('cdetail.add')}
           </button>
         </form>
         <table>
@@ -544,14 +548,14 @@ export default function CampaignDetailPage() {
                 <td className="muted">{k.type}</td>
                 <td>
                   <button className="btn danger small" onClick={() => void deleteKnowledge(k.id)}>
-                    Delete
+                    {t('cdetail.delete')}
                   </button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
-        {knowledge.length === 0 && <div className="muted">No knowledge added yet.</div>}
+        {knowledge.length === 0 && <div className="muted">{t('cdetail.noKnowledge')}</div>}
       </div>
     </Shell>
   );

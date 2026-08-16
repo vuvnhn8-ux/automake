@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import Shell from '@/components/Shell';
 import { api } from '@/lib/auth';
+import { useI18n } from '@/lib/i18n';
 
 interface Channel {
   id: string;
@@ -69,6 +70,7 @@ interface Knowledge {
 
 export default function ChannelDetailPage() {
   const { id, channelId } = useParams<{ id: string; channelId: string }>();
+  const { t } = useI18n();
   const [channel, setChannel] = useState<Channel | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -122,6 +124,7 @@ export default function ChannelDetailPage() {
     api<{ contents: any[]; publishingJobs: any[] }>(`/api/channels/${channelId}/calendar`)
       .then((d) => setCalendar(d))
       .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channelId]);
 
   const setSeriesIdForTopics = (seriesId: string) => {
@@ -144,7 +147,7 @@ export default function ChannelDetailPage() {
       await fn();
       load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Request failed');
+      setError(e instanceof Error ? e.message : t('chdet.requestFailed'));
     } finally {
       setBusy(false);
     }
@@ -153,7 +156,7 @@ export default function ChannelDetailPage() {
   if (!channel) {
     return (
       <Shell>
-        <div className="muted">Loading channel…</div>
+        <div className="muted">{t('chdet.loading')}</div>
         {error && <div className="error">{error}</div>}
       </Shell>
     );
@@ -225,7 +228,7 @@ export default function ChannelDetailPage() {
     });
 
   const deleteSeries = (seriesId: string) => {
-    if (!window.confirm('Delete this series and its topics?')) return;
+    if (!window.confirm(t('chdet.deleteSeriesConfirm'))) return;
     void action(() => api(`/api/series/${seriesId}`, { method: 'DELETE' }));
   };
 
@@ -234,11 +237,11 @@ export default function ChannelDetailPage() {
       <div className="spread" style={{ marginBottom: 16 }}>
         <div>
           <div className="muted" style={{ fontSize: 13 }}>
-            <Link href={`/projects/${id}/channels`}>← Channels</Link>
+            <Link href={`/projects/${id}/channels`}>{t('chdet.backChannels')}</Link>
           </div>
           <h2 style={{ margin: 0 }}>{channel.name}</h2>
           <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
-            {channel.platform} · {channel.dailyVideoTarget}/day target · {channel._count.contents} contents · {channel._count.schedules} schedules
+            {channel.platform} · {t('chdet.meta', { target: channel.dailyVideoTarget, contents: channel._count.contents, schedules: channel._count.schedules })}
           </div>
         </div>
         <div className="wrap">
@@ -247,14 +250,14 @@ export default function ChannelDetailPage() {
             disabled={busy}
             onClick={() => void action(() => api(`/api/channels/${channelId}`, { method: 'PATCH', body: { isActive: !channel.isActive } }))}
           >
-            {channel.isActive ? 'Deactivate' : 'Activate'}
+            {channel.isActive ? t('chdet.deactivate') : t('chdet.activate')}
           </button>
           <button
             className="btn small"
             disabled={busy || !selectedSeries}
             onClick={() => void generate()}
           >
-            Generate {genCount} video{genCount > 1 ? 's' : ''}
+            {genCount > 1 ? t('chdet.generateNs', { n: genCount }) : t('chdet.generateN', { n: genCount })}
           </button>
         </div>
       </div>
@@ -263,76 +266,76 @@ export default function ChannelDetailPage() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(320px,1fr))', gap: 16 }}>
         {/* Content profile */}
         <section className="card">
-          <h3 style={{ marginTop: 0 }}>Content profile</h3>
+          <h3 style={{ marginTop: 0 }}>{t('chdet.contentProfile')}</h3>
           <div className="field">
-            <label>Description</label>
+            <label>{t('chdet.description')}</label>
             <textarea rows={2} value={profile.description ?? ''} onChange={(e) => setProfile({ ...profile, description: e.target.value })} />
           </div>
           <div className="field">
-            <label>Audience</label>
+            <label>{t('chdet.audience')}</label>
             <input value={profile.audience ?? ''} onChange={(e) => setProfile({ ...profile, audience: e.target.value })} placeholder="e.g. Gen Z, tech enthusiasts" />
           </div>
           <div className="row" style={{ gap: 8 }}>
             <div className="field" style={{ flex: 1 }}>
-              <label>Language</label>
+              <label>{t('chdet.language')}</label>
               <input value={profile.language} onChange={(e) => setProfile({ ...profile, language: e.target.value })} />
             </div>
             <div className="field" style={{ flex: 1 }}>
-              <label>Tone</label>
+              <label>{t('chdet.tone')}</label>
               <input value={profile.tone} onChange={(e) => setProfile({ ...profile, tone: e.target.value })} />
             </div>
           </div>
           <div className="field">
-            <label>Content style</label>
+            <label>{t('chdet.contentStyle')}</label>
             <input value={profile.contentStyle ?? ''} onChange={(e) => setProfile({ ...profile, contentStyle: e.target.value })} placeholder="e.g. storytelling, listicle, tutorial" />
           </div>
           <div className="field">
-            <label>Video style</label>
+            <label>{t('chdet.videoStyle')}</label>
             <input value={profile.videoStyle ?? ''} onChange={(e) => setProfile({ ...profile, videoStyle: e.target.value })} />
           </div>
           <div className="row" style={{ gap: 8 }}>
             <div className="field" style={{ flex: 1 }}>
-              <label>Default duration (s)</label>
+              <label>{t('chdet.defaultDuration')}</label>
               <input type="number" min={5} max={600} value={profile.defaultDurationSeconds ?? 60} onChange={(e) => setProfile({ ...profile, defaultDurationSeconds: Number(e.target.value) })} />
             </div>
             <div className="field" style={{ flex: 2 }}>
-              <label>Default template</label>
+              <label>{t('chdet.defaultTemplate')}</label>
               <input value={profile.defaultTemplate ?? ''} onChange={(e) => setProfile({ ...profile, defaultTemplate: e.target.value })} />
             </div>
           </div>
           <div className="field">
-            <label>Keywords (comma separated)</label>
+            <label>{t('chdet.keywords')}</label>
             <input value={profile.keywords.join(', ')} onChange={(e) => setProfile({ ...profile, keywords: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} />
           </div>
           <div className="field">
-            <label>Excluded topics (comma separated)</label>
+            <label>{t('chdet.excludedTopics')}</label>
             <input value={profile.excludedTopics.join(', ')} onChange={(e) => setProfile({ ...profile, excludedTopics: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} />
           </div>
           <div className="field">
-            <label>Hashtags (comma separated)</label>
+            <label>{t('chdet.hashtags')}</label>
             <input value={profile.hashtags.join(', ')} onChange={(e) => setProfile({ ...profile, hashtags: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} />
           </div>
           <div className="field">
-            <label>CTA</label>
+            <label>{t('chdet.cta')}</label>
             <input value={profile.cta ?? ''} onChange={(e) => setProfile({ ...profile, cta: e.target.value })} placeholder="e.g. Follow for more tips" />
           </div>
           <div className="field">
-            <label>AI instructions</label>
+            <label>{t('chdet.aiInstructions')}</label>
             <textarea rows={3} value={profile.aiInstructions ?? ''} onChange={(e) => setProfile({ ...profile, aiInstructions: e.target.value })} />
           </div>
-          <button className="btn" disabled={busy} onClick={() => void saveProfile()}>Save profile</button>
+          <button className="btn" disabled={busy} onClick={() => void saveProfile()}>{t('chdet.saveProfile')}</button>
         </section>
 
         {/* Series + topics */}
         <section className="card">
-          <h3 style={{ marginTop: 0 }}>Series</h3>
+          <h3 style={{ marginTop: 0 }}>{t('chdet.series')}</h3>
           <form onSubmit={(e) => void addSeries(e)} className="row" style={{ marginBottom: 12 }}>
-            <input placeholder="New series name" value={seriesName} onChange={(e) => setSeriesName(e.target.value)} />
-            <button className="btn small" disabled={!seriesName.trim() || busy}>Add</button>
+            <input placeholder={t('chdet.newSeriesName')} value={seriesName} onChange={(e) => setSeriesName(e.target.value)} />
+            <button className="btn small" disabled={!seriesName.trim() || busy}>{t('chdet.add')}</button>
           </form>
           {channel.series.length > 0 && (
             <div className="field">
-              <label>Active series</label>
+              <label>{t('chdet.activeSeries')}</label>
               <select
                 value={selectedSeries}
                 onChange={(e) => {
@@ -350,42 +353,42 @@ export default function ChannelDetailPage() {
           {channel.series.map((s) => (
             <SeriesCard key={s.id} series={s} busy={busy} onAction={action} onDelete={deleteSeries} />
           ))}
-          {channel.series.length === 0 && <div className="muted">No series yet.</div>}
+          {channel.series.length === 0 && <div className="muted">{t('chdet.noSeries')}</div>}
 
-          <h4 style={{ marginBottom: 8 }}>Add topic to series</h4>
+          <h4 style={{ marginBottom: 8 }}>{t('chdet.addTopicToSeries')}</h4>
           <form onSubmit={(e) => void addTopic(e)} className="row" style={{ marginBottom: 12 }}>
-            <input placeholder="New topic" value={topicName} onChange={(e) => setTopicName(e.target.value)} disabled={!selectedSeries} />
-            <button className="btn small" disabled={!topicName.trim() || !selectedSeries || busy}>Add</button>
+            <input placeholder={t('chdet.newTopic')} value={topicName} onChange={(e) => setTopicName(e.target.value)} disabled={!selectedSeries} />
+            <button className="btn small" disabled={!topicName.trim() || !selectedSeries || busy}>{t('chdet.add')}</button>
           </form>
           <div className="row" style={{ gap: 8 }}>
             <input type="number" min={1} max={20} value={aiTopicCount} onChange={(e) => setAiTopicCount(Number(e.target.value))} title="AI topic count" style={{ width: 70 }} />
             <button className="btn small secondary" disabled={!selectedSeries || busy} onClick={() => void generateTopics()}>
-              Generate topics with AI
+              {t('chdet.genTopicsAI')}
             </button>
           </div>
         </section>
 
         {/* Knowledge base */}
         <section className="card">
-          <h3 style={{ marginTop: 0 }}>Knowledge base</h3>
+          <h3 style={{ marginTop: 0 }}>{t('chdet.knowledgeBase')}</h3>
           <form onSubmit={(e) => void addKnowledge(e)}>
             <div className="field">
-              <label>Type</label>
+              <label>{t('chdet.type')}</label>
               <select value={kbType} onChange={(e) => setKbType(e.target.value)}>
-                {['TEXT', 'TXT', 'MARKDOWN', 'PDF', 'URL'].map((t) => (
-                  <option key={t} value={t}>{t}</option>
+                {['TEXT', 'TXT', 'MARKDOWN', 'PDF', 'URL'].map((kt) => (
+                  <option key={kt} value={kt}>{kt}</option>
                 ))}
               </select>
             </div>
             <div className="field">
-              <label>Title</label>
+              <label>{t('chdet.title')}</label>
               <input value={kbTitle} onChange={(e) => setKbTitle(e.target.value)} placeholder="e.g. Brand guidelines" />
             </div>
             <div className="field">
-              <label>Content</label>
+              <label>{t('chdet.content')}</label>
               <textarea rows={3} value={kbContent} onChange={(e) => setKbContent(e.target.value)} placeholder="Paste reference content the AI must follow" />
             </div>
-            <button className="btn small" disabled={!kbTitle.trim() || busy}>Add entry</button>
+            <button className="btn small" disabled={!kbTitle.trim() || busy}>{t('chdet.addEntry')}</button>
           </form>
           <div style={{ marginTop: 12 }}>
             {channel.knowledge.map((k) => (
@@ -398,11 +401,11 @@ export default function ChannelDetailPage() {
                   className="btn small secondary"
                   onClick={() => void action(() => api(`/api/knowledge/${k.id}`, { method: 'DELETE' }))}
                 >
-                  Delete
+                  {t('chdet.delete')}
                 </button>
               </div>
             ))}
-            {channel.knowledge.length === 0 && <div className="muted">No knowledge entries.</div>}
+            {channel.knowledge.length === 0 && <div className="muted">{t('chdet.noKnowledge')}</div>}
           </div>
         </section>
       </div>
@@ -410,25 +413,25 @@ export default function ChannelDetailPage() {
       {/* Generate + calendar */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(340px,1fr))', gap: 16, marginTop: 16 }}>
         <section className="card">
-          <h3 style={{ marginTop: 0 }}>Generate now</h3>
+          <h3 style={{ marginTop: 0 }}>{t('chdet.generateNow')}</h3>
           <div className="row" style={{ gap: 8 }}>
             <input type="number" min={1} max={20} value={genCount} onChange={(e) => setGenCount(Number(e.target.value))} title="Number of videos" style={{ width: 80 }} />
-            <span className="muted" style={{ fontSize: 13 }}>videos from the selected series</span>
+            <span className="muted" style={{ fontSize: 13 }}>{t('chdet.videosFromSeries')}</span>
           </div>
           <button className="btn" style={{ marginTop: 8 }} disabled={busy || !selectedSeries} onClick={() => void generate()}>
-            Generate content
+            {t('chdet.generateContent')}
           </button>
         </section>
 
         <section className="card">
-          <h3 style={{ marginTop: 0 }}>Calendar (next 30 days)</h3>
+          <h3 style={{ marginTop: 0 }}>{t('chdet.calendar')}</h3>
           <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>
-            {calendar.contents.length} contents · {calendar.publishingJobs.length} publishing jobs
+            {t('chdet.calendarCount', { n: calendar.contents.length, jobs: calendar.publishingJobs.length })}
           </div>
           {calendar.contents.slice(0, 10).map((c: any) => (
             <div key={c.id} className="spread" style={{ padding: '4px 0' }}>
               <div style={{ fontSize: 13 }}>
-                {c.title ?? '(untitled)'} <span className="muted">· {c.topic?.name ?? 'free'}</span>
+                {c.title ?? t('chdet.untitled')} <span className="muted">· {c.topic?.name ?? t('chdet.free')}</span>
               </div>
               <span className="badge warn">{c.status}</span>
             </div>
@@ -436,13 +439,13 @@ export default function ChannelDetailPage() {
           {calendar.publishingJobs.slice(0, 10).map((p: any) => (
             <div key={p.id} className="spread" style={{ padding: '4px 0' }}>
               <div style={{ fontSize: 13 }}>
-                Publish: {p.video?.content?.title ?? '(video)'} <span className="muted">· {new Date(p.scheduledAt).toLocaleString()}</span>
+                {t('chdet.publish', { title: p.video?.content?.title ?? '(video)' })} <span className="muted">· {new Date(p.scheduledAt).toLocaleString()}</span>
               </div>
               <span className="badge">{p.status}</span>
             </div>
           ))}
           {calendar.contents.length === 0 && calendar.publishingJobs.length === 0 && (
-            <div className="muted">Nothing scheduled yet.</div>
+            <div className="muted">{t('chdet.nothingScheduled')}</div>
           )}
         </section>
       </div>
@@ -461,6 +464,7 @@ function SeriesCard({
   onAction: (fn: () => Promise<unknown>) => Promise<void>;
   onDelete: (seriesId: string) => void;
 }) {
+  const { t } = useI18n();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(series.name);
   const [description, setDescription] = useState(series.description ?? '');
@@ -489,7 +493,7 @@ function SeriesCard({
         <div>
           <strong>{series.name}</strong>
           <div className="muted" style={{ fontSize: 12 }}>
-            {series.frequencyPerDay}/day · priority {series.priority} · {series._count.topics} topics
+            {t('chdet.seriesMeta', { freq: series.frequencyPerDay, priority: series.priority, topics: series._count.topics })}
           </div>
         </div>
         <div className="wrap">
@@ -497,13 +501,13 @@ function SeriesCard({
             className="btn small secondary"
             onClick={() => void onAction(() => api(`/api/series/${series.id}`, { method: 'PATCH', body: { isActive: !series.isActive } }))}
           >
-            {series.isActive ? 'pause' : 'resume'}
+            {series.isActive ? t('chdet.pause') : t('chdet.resume')}
           </button>
           <button className="btn small secondary" onClick={() => setEditing((v) => !v)}>
-            {editing ? 'Cancel' : 'Edit'}
+            {editing ? t('chdet.cancel') : t('chdet.edit')}
           </button>
           <button className="btn small secondary" disabled={busy} onClick={() => onDelete(series.id)}>
-            Delete
+            {t('chdet.delete')}
           </button>
         </div>
       </div>
@@ -511,52 +515,52 @@ function SeriesCard({
       {editing && (
         <div className="card" style={{ marginTop: 8, padding: 12 }}>
           <div className="field">
-            <label>Name</label>
+            <label>{t('chdet.name')}</label>
             <input value={name} onChange={(e) => setName(e.target.value)} />
           </div>
           <div className="field">
-            <label>Description</label>
+            <label>{t('chdet.description')}</label>
             <textarea rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
           </div>
           <div className="field">
-            <label>Instructions</label>
+            <label>{t('chdet.instructions')}</label>
             <textarea rows={2} value={instructions} onChange={(e) => setInstructions(e.target.value)} />
           </div>
           <div className="row" style={{ gap: 8 }}>
             <div className="field" style={{ flex: 1 }}>
-              <label>Videos/day</label>
+              <label>{t('chdet.videosPerDay')}</label>
               <input type="number" min={0} max={100} value={frequencyPerDay} onChange={(e) => setFrequencyPerDay(Number(e.target.value))} />
             </div>
             <div className="field" style={{ flex: 1 }}>
-              <label>Priority</label>
+              <label>{t('chdet.priority')}</label>
               <input type="number" min={0} max={100} value={priority} onChange={(e) => setPriority(Number(e.target.value))} />
             </div>
           </div>
           <button className="btn small" disabled={busy || !name.trim()} onClick={() => void save()}>
-            Save series
+            {t('chdet.saveSeries')}
           </button>
         </div>
       )}
 
       <div style={{ paddingLeft: 12 }}>
-        {series.topics?.map((t) => (
-          <div key={t.id} className="spread" style={{ padding: '4px 0' }}>
+        {series.topics?.map((tp) => (
+          <div key={tp.id} className="spread" style={{ padding: '4px 0' }}>
             <div style={{ fontSize: 13 }}>
-              {t.name}
-              <span className="muted"> · used {t.usedCount}x</span>
+              {tp.name}
+              <span className="muted"> · {t('chdet.usedN', { n: tp.usedCount })}</span>
             </div>
             <div className="wrap">
-              <span className="badge">{t.source}</span>
+              <span className="badge">{tp.source}</span>
               <button
                 className="btn small secondary"
-                onClick={() => void onAction(() => api(`/api/series/${series.id}/topics/${t.id}/use`, { method: 'POST' }))}
+                onClick={() => void onAction(() => api(`/api/series/${series.id}/topics/${tp.id}/use`, { method: 'POST' }))}
               >
-                Mark used
+                {t('chdet.markUsed')}
               </button>
             </div>
           </div>
         ))}
-        {series.topics && series.topics.length === 0 && <div className="muted" style={{ fontSize: 13 }}>No topics.</div>}
+        {series.topics && series.topics.length === 0 && <div className="muted" style={{ fontSize: 13 }}>{t('chdet.noTopics')}</div>}
       </div>
     </div>
   );

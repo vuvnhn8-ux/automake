@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Shell from '@/components/Shell';
 import { api } from '@/lib/auth';
+import { useI18n } from '@/lib/i18n';
 
 interface Page {
   id: string;
@@ -47,6 +48,7 @@ interface VideoDetail {
 
 export default function VideoDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const { t } = useI18n();
   const [video, setVideo] = useState<VideoDetail | null>(null);
   const [pages, setPages] = useState<Page[]>([]);
   const [selectedPages, setSelectedPages] = useState<string[]>([]);
@@ -79,7 +81,7 @@ export default function VideoDetailPage() {
       await fn();
       load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Request failed');
+      setError(e instanceof Error ? e.message : t('vdetail.requestFailed'));
     } finally {
       setBusy('');
     }
@@ -88,7 +90,7 @@ export default function VideoDetailPage() {
   if (!video) {
     return (
       <Shell>
-        <div className="muted">Loading…</div>
+        <div className="muted">{t('vdetail.loading')}</div>
         {error && <div className="error">{error}</div>}
       </Shell>
     );
@@ -113,9 +115,9 @@ export default function VideoDetailPage() {
 
       <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(320px,1fr))' }}>
         <section className="card">
-          <h3 style={{ marginTop: 0 }}>Details</h3>
+          <h3 style={{ marginTop: 0 }}>{t('vdetail.details')}</h3>
           <div className="muted" style={{ marginBottom: 8 }}>
-            Duration: {video.durationSeconds ?? '—'}s · Quality: {video.qualityScore ?? '—'}
+            {t('vdetail.duration', { dur: video.durationSeconds ?? '—', quality: video.qualityScore ?? '—' })}
             {video.url && (
               <div>
                 <a href={video.url} target="_blank" rel="noreferrer" className="mono" style={{ color: 'var(--accent)' }}>
@@ -127,14 +129,14 @@ export default function VideoDetailPage() {
 
           <div className="wrap">
             <button className="btn small" disabled={busy === 'qa'} onClick={() => void run('qa', () => api(`/api/videos/${id}/qa`, { method: 'POST' }))}>
-              {busy === 'qa' ? 'QA…' : 'Run quality check'}
+              {busy === 'qa' ? t('vdetail.qaBusy') : t('vdetail.runQa')}
             </button>
           </div>
 
           <div style={{ marginTop: 16 }}>
             <div className="field">
-              <label>Publish to Facebook pages (select one or more)</label>
-              {pages.length === 0 && <div className="muted">No connected Facebook pages.</div>}
+              <label>{t('vdetail.publishTo')}</label>
+              {pages.length === 0 && <div className="muted">{t('vdetail.noPages')}</div>}
               <div className="wrap">
                 {pages.map((p) => (
                   <label key={p.id} className="row" style={{ gap: 6, marginRight: 14, fontSize: 14 }}>
@@ -153,7 +155,7 @@ export default function VideoDetailPage() {
               </div>
             </div>
             <div className="field">
-              <label>Schedule time (optional)</label>
+              <label>{t('vdetail.scheduleTime')}</label>
               <input type="datetime-local" value={scheduleAt} onChange={(e) => setScheduleAt(e.target.value)} />
             </div>
             <button
@@ -168,13 +170,17 @@ export default function VideoDetailPage() {
                 )
               }
             >
-              {busy === 'publish' ? 'Publishing…' : `Publish to ${selectedPages.length} page${selectedPages.length === 1 ? '' : 's'}`}
+              {busy === 'publish'
+                ? t('vdetail.publishing')
+                : selectedPages.length === 1
+                  ? t('vdetail.publishToN', { n: selectedPages.length })
+                  : t('vdetail.publishToNs', { n: selectedPages.length })}
             </button>
           </div>
         </section>
 
         <section className="card">
-          <h3 style={{ marginTop: 0 }}>Scenes ({video.content.scenes.length})</h3>
+          <h3 style={{ marginTop: 0 }}>{t('vdetail.scenes', { n: video.content.scenes.length })}</h3>
           {video.content.scenes.map((s) => (
             <div key={s.id} style={{ padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
               <div className="spread">
@@ -183,7 +189,7 @@ export default function VideoDetailPage() {
               </div>
               <div className="muted" style={{ fontSize: 13 }}>{s.subtitleText ?? s.narration}</div>
               <div className="mono" style={{ fontSize: 11, marginTop: 2 }}>
-                {s.assets.map((a) => `${a.type}=${a.status}`).join(' · ') || 'no assets'}
+                {s.assets.map((a) => `${a.type}=${a.status}`).join(' · ') || t('vdetail.noAssets')}
               </div>
             </div>
           ))}
@@ -192,7 +198,7 @@ export default function VideoDetailPage() {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(320px,1fr))', gap: 16, marginTop: 16 }}>
         <section className="card">
-          <h3 style={{ marginTop: 0 }}>Render jobs</h3>
+          <h3 style={{ marginTop: 0 }}>{t('vdetail.renderJobs')}</h3>
           {video.renderJobs.map((j) => (
             <div key={j.id} className="spread" style={{ padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
               <div>
@@ -204,26 +210,30 @@ export default function VideoDetailPage() {
               <span className="muted mono">{new Date(j.createdAt).toLocaleString()}</span>
             </div>
           ))}
-          {video.renderJobs.length === 0 && <div className="muted">No render jobs.</div>}
+          {video.renderJobs.length === 0 && <div className="muted">{t('vdetail.noRenderJobs')}</div>}
         </section>
 
         <section className="card">
-          <h3 style={{ marginTop: 0 }}>Publishing jobs</h3>
+          <h3 style={{ marginTop: 0 }}>{t('vdetail.publishingJobs')}</h3>
           {video.publishingJobs.map((j) => (
             <div key={j.id} className="spread" style={{ padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
               <div>
                 <span className={`badge ${badge(j.status)}`}>{j.status}</span>{' '}
                 <span className="muted" style={{ fontSize: 12 }}>{j.facebookPage?.pageName ?? ''}</span>
                 <div className="mono" style={{ fontSize: 11, marginTop: 4 }}>
-                  {j.facebookPostId ? `post: ${j.facebookPostId}` : j.errorMessage ?? ''}
+                  {j.facebookPostId ? t('vdetail.post', { id: j.facebookPostId }) : j.errorMessage ?? ''}
                 </div>
               </div>
               <span className="muted mono">
-                {j.scheduledAt ? `scheduled ${new Date(j.scheduledAt).toLocaleString()}` : j.publishedAt ? `published ${new Date(j.publishedAt).toLocaleString()}` : ''}
+                {j.scheduledAt
+                  ? t('vdetail.scheduled', { date: new Date(j.scheduledAt).toLocaleString() })
+                  : j.publishedAt
+                    ? t('vdetail.published', { date: new Date(j.publishedAt).toLocaleString() })
+                    : ''}
               </span>
             </div>
           ))}
-          {video.publishingJobs.length === 0 && <div className="muted">Not published yet.</div>}
+          {video.publishingJobs.length === 0 && <div className="muted">{t('vdetail.notPublished')}</div>}
         </section>
       </div>
     </Shell>

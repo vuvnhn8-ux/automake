@@ -1,6 +1,21 @@
 import { z } from 'zod';
 
-export type AIProviderName = 'GEMINI' | 'OPENAI' | 'CLAUDE' | 'MOCK';
+export type AIProviderName =
+  | 'GEMINI'
+  | 'OPENAI'
+  | 'CLAUDE'
+  | 'GROQ'
+  | 'DEEPSEEK'
+  | 'MISTRAL'
+  | 'XAI'
+  | 'COHERE'
+  | 'OPENROUTER'
+  | 'TOGETHER'
+  | 'CEREBRAS'
+  | 'FIREWORKS'
+  | 'QWEN'
+  | 'HUGGINGFACE'
+  | 'MOCK';
 
 export interface AICompletionRequest {
   system: string;

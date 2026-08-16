@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Shell from '@/components/Shell';
 import { api } from '@/lib/auth';
+import { useI18n } from '@/lib/i18n';
 
 interface Channel {
   id: string;
@@ -29,6 +30,7 @@ export default function AccountDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const id = params.id;
+  const { t } = useI18n();
 
   const [account, setAccount] = useState<AccountDetail | null>(null);
   const [error, setError] = useState('');
@@ -60,10 +62,10 @@ export default function AccountDetailPage() {
         },
       });
       setCredentials('');
-      setNotice('Account updated');
+      setNotice(t('adetail.updated'));
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update');
+      setError(err instanceof Error ? err.message : t('adetail.updateFailed'));
     }
   };
 
@@ -72,17 +74,17 @@ export default function AccountDetailPage() {
     setNotice('');
     try {
       await api(`/api/accounts/${id}`, { method: 'PATCH', body: { status: 'DISCONNECTED' } });
-      setNotice('Account marked DISCONNECTED');
+      setNotice(t('adetail.disconnected'));
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed');
+      setError(err instanceof Error ? err.message : t('adetail.failed'));
     }
   };
 
   if (!account) {
     return (
       <Shell>
-        <div className="hero">Loading…</div>
+        <div className="hero">{t('adetail.loading')}</div>
       </Shell>
     );
   }
@@ -92,7 +94,7 @@ export default function AccountDetailPage() {
       <div className="spread" style={{ marginBottom: 20 }}>
         <div>
           <button className="btn secondary small" onClick={() => router.push('/accounts')}>
-            ← Accounts
+            {t('adetail.back')}
           </button>
           <h2 style={{ margin: '10px 0 0' }}>{account.accountName}</h2>
           <div className="wrap" style={{ marginTop: 8 }}>
@@ -107,31 +109,31 @@ export default function AccountDetailPage() {
       {notice && <div className="muted" style={{ marginBottom: 12, color: 'var(--ok)' }}>{notice}</div>}
 
       <form onSubmit={(e) => void save(e)} className="card" style={{ marginBottom: 24 }}>
-        <h3 style={{ marginTop: 0 }}>Credentials</h3>
+        <h3 style={{ marginTop: 0 }}>{t('adetail.credentials')}</h3>
         <div className="mono" style={{ marginBottom: 12 }}>{account.credentialsMask}</div>
         <div className="row">
-          <input placeholder="Account name" value={accountName} onChange={(e) => setAccountName(e.target.value)} style={{ flex: 1 }} />
-          <input type="password" placeholder="New access token (leave empty to keep)" value={credentials} onChange={(e) => setCredentials(e.target.value)} style={{ flex: 2 }} />
+          <input placeholder={t('adetail.namePlaceholder')} value={accountName} onChange={(e) => setAccountName(e.target.value)} style={{ flex: 1 }} />
+          <input type="password" placeholder={t('adetail.tokenPlaceholder')} value={credentials} onChange={(e) => setCredentials(e.target.value)} style={{ flex: 2 }} />
           <button className="btn" type="submit">
-            Save
+            {t('adetail.save')}
           </button>
         </div>
         <div style={{ marginTop: 12 }}>
           <button className="btn secondary small" type="button" onClick={() => void disconnect()}>
-            Mark disconnected
+            {t('adetail.markDisconnected')}
           </button>
         </div>
       </form>
 
       <div className="card">
-        <h3 style={{ marginTop: 0 }}>Linked channels</h3>
+        <h3 style={{ marginTop: 0 }}>{t('adetail.linkedChannels')}</h3>
         <table>
           <thead>
             <tr>
-              <th>Name</th>
-              <th>Platform</th>
-              <th>Facebook page</th>
-              <th>Status</th>
+              <th>{t('adetail.name')}</th>
+              <th>{t('adetail.platform')}</th>
+              <th>{t('adetail.facebookPage')}</th>
+              <th>{t('adetail.status')}</th>
             </tr>
           </thead>
           <tbody>
@@ -141,13 +143,13 @@ export default function AccountDetailPage() {
                 <td>{c.platform}</td>
                 <td className="muted">{c.facebookPage?.pageName ?? '—'}</td>
                 <td>
-                  <span className={`badge ${c.isActive ? 'ok' : 'warn'}`}>{c.isActive ? 'ACTIVE' : 'DISABLED'}</span>
+                  <span className={`badge ${c.isActive ? 'ok' : 'warn'}`}>{c.isActive ? t('channels.statusActive') : t('channels.statusDisabled')}</span>
                 </td>
               </tr>
             ))}
             {account.channels.length === 0 && (
               <tr>
-                <td colSpan={4} className="muted">No channels linked to this account.</td>
+                <td colSpan={4} className="muted">{t('adetail.noLinked')}</td>
               </tr>
             )}
           </tbody>

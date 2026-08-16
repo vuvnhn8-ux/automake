@@ -8,7 +8,9 @@ import {
   ContentRulesSchema,
   selectTopic,
 } from '@avf/shared';
-import { createAIProvider, completeJson, buildTopicSuggestionPrompt, GeneratedTopicsSchema } from '@avf/ai';
+import { completeJsonWithPool, buildTopicSuggestionPrompt, GeneratedTopicsSchema } from '@avf/ai';
+import { createPlatformProvider, FacebookTokenCipher } from '@avf/social';
+import { recordProviderUsage } from '@avf/config';
 import { parse, parseId } from '../lib/validate.js';
 import { getAuthUser } from '../plugins/auth.js';
 import { getChannel, getSeries, getKnowledge, getSeriesTopic } from '../lib/access.js';
@@ -128,10 +130,79 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
       include: {
         project: { select: { id: true, name: true } },
         publishingAccount: { select: { id: true, accountName: true, platform: true, status: true } },
+        projectAssignments: { select: { projectId: true, project: { select: { id: true, name: true } }, enabled: true } },
         _count: { select: { series: true, knowledge: true, contents: true } },
       },
     });
     return { channels };
+  });
+
+  // Test the connection/credentials of a channel and record the outcome.
+  app.post('/channels/:id/test-connection', async (request, reply) => {
+    const auth = getAuthUser(request);
+    const id = parseId((request.params as { id: string }).id);
+    const channel = await getChannel(auth.id, id);
+    const cipher = new FacebookTokenCipher();
+
+    try {
+      if (channel.facebookPage?.accessTokenEnc) {
+        const token = cipher.decrypt(channel.facebookPage.accessTokenEnc);
+        const provider = createPlatformProvider('FACEBOOK');
+        const pages = await provider.listPages(token);
+        const found = pages.some((p) => p.pageId === channel.facebookPage?.pageId);
+        const status = found ? 'CONNECTED' : 'ERROR';
+        await prisma.publishingChannel.update({
+          where: { id },
+          data: { connectionStatus: status, tokenStatus: found ? 'VALID' : 'NOT_FOUND', lastCheckedAt: new Date() },
+        });
+        return { ok: found, status, message: found ? 'Connection OK' : 'Page not found for this token' };
+      }
+
+      if (channel.publishingAccount?.credentials) {
+        const token = cipher.decrypt(channel.publishingAccount.credentials);
+        const provider = createPlatformProvider(
+          channel.platform,
+          (channel.publishingAccount.metadata ?? null) as Record<string, unknown> | null,
+        );
+        // Generic providers are mock-only unless an endpoint is configured; a
+        // configured endpoint gets a real probe via a no-op publish descriptor.
+        const endpoint = (channel.publishingAccount.metadata as Record<string, unknown> | null)?.endpoint;
+        if (typeof endpoint === 'string' && /^https?:\/\//.test(endpoint)) {
+          const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+            body: JSON.stringify({ platform: channel.platform, action: 'test' }),
+          });
+          const ok = res.ok || res.status === 404 || res.status === 405;
+          await prisma.publishingChannel.update({
+            where: { id },
+            data: { connectionStatus: ok ? 'CONNECTED' : 'ERROR', tokenStatus: ok ? 'VALID' : 'ERROR', lastCheckedAt: new Date() },
+          });
+          return { ok, status: ok ? 'CONNECTED' : 'ERROR', message: ok ? 'Connection OK' : `Endpoint responded ${res.status}` };
+        }
+        await prisma.publishingChannel.update({
+          where: { id },
+          data: { connectionStatus: 'CONNECTED', tokenStatus: 'VALID', lastCheckedAt: new Date() },
+        });
+        return { ok: true, status: 'CONNECTED', message: 'Mock/endpoint-less provider — OK' };
+      }
+
+      await prisma.publishingChannel.update({
+        where: { id },
+        data: { connectionStatus: 'UNKNOWN', tokenStatus: 'NO_CREDENTIALS', lastCheckedAt: new Date() },
+      });
+      return { ok: false, status: 'UNKNOWN', message: 'No credentials attached to this channel' };
+    } catch (err) {
+      await prisma.publishingChannel.update({
+        where: { id },
+        data: { connectionStatus: 'ERROR', tokenStatus: 'INVALID', lastCheckedAt: new Date() },
+      });
+      return {
+        ok: false,
+        status: 'ERROR',
+        message: err instanceof Error ? err.message : 'Connection test failed',
+      };
+    }
   });
 
   app.get('/projects/:projectId/channels', async (request) => {
@@ -499,7 +570,6 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
       }),
     ]);
 
-    const ai = createAIProvider();
     const { system, user } = buildTopicSuggestionPrompt({
       channel: profile
         ? { ...profile, contentRules: (profile.contentRules ?? undefined) as Record<string, unknown> | undefined }
@@ -514,8 +584,12 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
       language: body.language,
     });
 
-    const { data } = await completeJson(ai, system, user, GeneratedTopicsSchema, {
+    const { data } = await completeJsonWithPool(system, user, GeneratedTopicsSchema, {
       requestId: `channel:${id}:topics`,
+      pool: {
+        group: 'AI_TEXT',
+        onUsage: (record) => void recordProviderUsage({ ...record }),
+      },
     });
 
     const existing = existingTopics.map((t) => t.name);

@@ -17,12 +17,12 @@ import {
   planVariantLanguages,
 } from '@avf/shared';
 import {
-  createAIProvider,
-  completeJson,
+  completeJsonWithPool,
   buildTopicSuggestionPrompt,
   GeneratedTopicsSchema,
   type CampaignProfileInput,
 } from '@avf/ai';
+import { recordProviderUsage } from '@avf/config';
 import { parse, parseId } from '../lib/validate.js';
 import { getAuthUser } from '../plugins/auth.js';
 import {
@@ -484,7 +484,6 @@ export async function campaignRoutes(app: FastifyInstance): Promise<void> {
     ]);
 
     const campaignProfile = campaign.contentProfile as CampaignProfileInput | null;
-    const ai = createAIProvider();
     const { system, user } = buildTopicSuggestionPrompt({
       campaign: campaignProfile ? { ...campaignProfile, aiInstructions: campaign.aiInstructions } : campaign.aiInstructions ? { name: campaign.name, aiInstructions: campaign.aiInstructions } : undefined,
       series: series ?? undefined,
@@ -497,8 +496,12 @@ export async function campaignRoutes(app: FastifyInstance): Promise<void> {
       language: body.language ?? campaignProfile?.language,
     });
 
-    const { data } = await completeJson(ai, system, user, GeneratedTopicsSchema, {
+    const { data } = await completeJsonWithPool(system, user, GeneratedTopicsSchema, {
       requestId: `campaign:${id}:topics`,
+      pool: {
+        group: 'AI_TEXT',
+        onUsage: (record) => void recordProviderUsage({ ...record }),
+      },
     });
 
     const existing = existingTopics.map((t) => t.name);

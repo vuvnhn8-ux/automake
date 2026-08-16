@@ -21,6 +21,17 @@ const LoginSchema = z.object({
   password: z.string().min(1),
 });
 
+export const ChangePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1).max(128),
+    newPassword: z.string().min(8).max(128),
+    newPasswordConfirm: z.string().min(1).max(128),
+  })
+  .refine((data) => data.newPassword === data.newPasswordConfirm, {
+    message: 'New passwords do not match',
+    path: ['newPasswordConfirm'],
+  });
+
 function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
@@ -73,6 +84,36 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       name: user.name,
       role: user.role,
     });
+  });
+
+  app.post('/change-password', async (request, reply) => {
+    const auth = getAuthUser(request);
+    const body = parse(ChangePasswordSchema, request.body);
+
+    const user = await prisma.user.findUnique({ where: { id: auth.id } });
+    if (!user) {
+      return reply.code(404).send({ error: 'not_found', message: 'User not found' });
+    }
+    if (!(await verifyPassword(body.currentPassword, user.passwordHash))) {
+      return reply.code(401).send({ error: 'invalid_credentials', message: 'Current password is incorrect' });
+    }
+    if (body.newPassword === body.currentPassword) {
+      return reply.code(400).send({ error: 'invalid_password', message: 'New password must differ from the current password' });
+    }
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash: await hashPassword(body.newPassword) },
+    });
+
+    // Revoke all other sessions so a password change logs out other devices.
+    // The current refresh token (if any) is kept so this session stays active.
+    const currentToken = request.cookies[REFRESH_COOKIE];
+    await prisma.session.deleteMany({
+      where: { userId: user.id, ...(currentToken ? { tokenHash: { not: hashToken(currentToken) } } : {}) },
+    });
+
+    return { ok: true };
   });
 
   app.post('/refresh', async (request, reply) => {

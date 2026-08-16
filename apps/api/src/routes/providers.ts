@@ -10,8 +10,11 @@ import {
 } from '@avf/config';
 import {
   PROVIDER_GROUPS,
+  PROVIDER_CATALOG,
   KEY_ENV_BY_PROVIDER,
   MODEL_ENV_BY_PROVIDER,
+  isOpenAICompatible,
+  catalogEndpoint,
   type ProviderGroup,
 } from '@avf/shared';
 import {
@@ -19,6 +22,7 @@ import {
   OpenAIProvider,
   ClaudeProvider,
   MockAIProvider,
+  OpenAICompatibleProvider,
   TavilyResearchProvider,
   type AICompletionRequest,
   type AIProvider,
@@ -35,6 +39,11 @@ const ProviderUpdateSchema = z.object({
   setActive: z.boolean().optional(),
   apiKey: z.string().max(4096).nullable().optional(),
   model: z.string().max(256).nullable().optional(),
+});
+
+const PrioritySchema = z.object({
+  group: z.enum(PROVIDER_GROUP_IDS as unknown as [ProviderGroup, ...ProviderGroup[]]),
+  priority: z.array(z.string().min(1).max(64)).min(1).max(20),
 });
 
 const TestConnectionSchema = z.object({
@@ -59,7 +68,12 @@ function errorMessage(err: unknown): string {
 
 export async function providersRoutes(app: FastifyInstance): Promise<void> {
   app.get('/providers', async (request) => {
-    getAuthUser(request);
+    const auth = getAuthUser(request);
+    const [usageRows] = await Promise.all([
+      prisma.providerUsage.findMany(),
+    ]);
+    const usageByKey = new Map(usageRows.map((u) => [`${u.group}:${u.provider}`, u]));
+
     const groups = PROVIDER_GROUPS.map((group) => {
       const active = getActiveProvider(group.id, envValue(group.envKey) || group.activeDefault);
       const activeFrom: 'env' | 'db' = getProviderSetting(group.id)?.custom?.active ? 'db' : 'env';
@@ -70,10 +84,13 @@ export async function providersRoutes(app: FastifyInstance): Promise<void> {
         envActive: envValue(group.envKey) || group.activeDefault,
         active,
         activeFrom,
+        priority: priorityOf(group.id, active),
+        catalog: PROVIDER_CATALOG.filter((e) => e.category === group.id),
         options: group.options.map((opt) => {
           const setting = getProviderSetting(opt.id);
           const keyEnv = KEY_ENV_BY_PROVIDER[opt.id];
           const modelEnv = MODEL_ENV_BY_PROVIDER[opt.id];
+          const usage = usageByKey.get(`${group.id}:${opt.id}`);
           return {
             id: opt.id,
             label: opt.label,
@@ -85,11 +102,28 @@ export async function providersRoutes(app: FastifyInstance): Promise<void> {
             model: setting?.model ?? null,
             modelEnv: modelEnv ? envValue(modelEnv) : null,
             keyEnvSet: keyEnv ? Boolean(envValue(keyEnv)) : false,
+            openAICompatible: isOpenAICompatible(opt.id),
+            endpoint: catalogEndpoint(opt.id),
+            usage: usage
+              ? {
+                  requests: usage.requests,
+                  success: usage.success,
+                  failed: usage.failed,
+                  rateLimited: usage.rateLimited,
+                  timeout: usage.timeout,
+                  fallbackEvents: usage.fallbackEvents,
+                  lastError: usage.lastError,
+                  lastSuccessAt: usage.lastSuccessAt,
+                  lastRequestAt: usage.lastRequestAt,
+                  health: usage.health,
+                  updatedAt: usage.updatedAt,
+                }
+              : null,
           };
         }),
       };
     });
-    return { groups };
+    return { groups, totalProviders: PROVIDER_CATALOG.length, categories: PROVIDER_GROUPS.length };
   });
 
   app.put('/providers', async (request, reply) => {
@@ -136,6 +170,29 @@ export async function providersRoutes(app: FastifyInstance): Promise<void> {
 
     await loadProviderConfig();
     return reply.code(200).send({ ok: true });
+  });
+
+  app.put('/providers/priority', async (request, reply) => {
+    const auth = getAuthUser(request);
+    if (auth.role !== 'ADMIN') {
+      return reply.code(403).send({ error: 'forbidden', message: 'Admins only' });
+    }
+    const body = parse(PrioritySchema, request.body);
+    const group = PROVIDER_GROUPS.find((g) => g.id === body.group);
+    if (!group) {
+      return reply.code(400).send({ error: 'invalid_group', message: 'Unknown group' });
+    }
+    const valid = body.priority.every((id) => group.options.some((o) => o.id === id));
+    if (!valid) {
+      return reply.code(400).send({ error: 'invalid_priority', message: 'Priority contains an unknown provider' });
+    }
+    await prisma.systemSetting.upsert({
+      where: { key: `provider.${body.group}.priority` },
+      update: { value: JSON.stringify(body.priority) as never },
+      create: { key: `provider.${body.group}.priority`, value: JSON.stringify(body.priority) as never },
+    });
+    await loadProviderConfig();
+    return reply.code(200).send({ ok: true, priority: body.priority });
   });
 
   app.post('/providers/test-connection', async (request, reply) => {
@@ -185,9 +242,18 @@ export async function providersRoutes(app: FastifyInstance): Promise<void> {
             provider = new MockAIProvider();
             break;
           default:
-            return reply
-              .code(400)
-              .send({ ok: false, message: `Provider ${body.provider} is not testable` });
+            if (isOpenAICompatible(body.provider)) {
+              provider = new OpenAICompatibleProvider(
+                body.provider as never,
+                apiKey,
+                model,
+                catalogEndpoint(body.provider) ?? undefined,
+              );
+            } else {
+              return reply
+                .code(400)
+                .send({ ok: false, message: `Provider ${body.provider} is not testable` });
+            }
         }
         const result = await provider.complete(request);
         return reply.code(200).send({
@@ -209,4 +275,21 @@ export async function providersRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(200).send({ ok: false, message: errorMessage(err) });
     }
   });
+}
+
+function priorityOf(group: string, active: string): string[] {
+  const setting = getProviderSetting(group);
+  const raw = setting?.custom?.priority;
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed)) {
+        const ids = parsed.filter((x): x is string => typeof x === 'string');
+        if (ids.length) return ids;
+      }
+    } catch {
+      /* malformed */
+    }
+  }
+  return [active];
 }

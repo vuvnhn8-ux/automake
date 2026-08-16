@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Shell from '@/components/Shell';
 import { api } from '@/lib/auth';
+import { useI18n } from '@/lib/i18n';
 
 interface Project {
   id: string;
@@ -21,6 +22,7 @@ interface Campaign {
 }
 
 export default function CampaignsPage() {
+  const { t } = useI18n();
   const [projects, setProjects] = useState<Project[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [projectId, setProjectId] = useState('');
@@ -60,7 +62,7 @@ export default function CampaignsPage() {
       setDescription('');
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create campaign');
+      setError(err instanceof Error ? err.message : t('campaigns.createFailed'));
     } finally {
       setCreating(false);
     }
@@ -72,7 +74,7 @@ export default function CampaignsPage() {
   return (
     <Shell>
       <div className="spread" style={{ marginBottom: 20 }}>
-        <h2 style={{ margin: 0 }}>Content Campaigns</h2>
+        <h2 style={{ margin: 0 }}>{t('campaigns.title')}</h2>
         <select value={projectId} onChange={(e) => setProjectId(e.target.value)} style={{ width: 260 }}>
           {projects.map((p) => (
             <option key={p.id} value={p.id}>
@@ -85,19 +87,19 @@ export default function CampaignsPage() {
       <form onSubmit={(e) => void create(e)} className="card" style={{ marginBottom: 24 }}>
         <div className="row">
           <input
-            placeholder="Campaign name"
+            placeholder={t('campaigns.namePlaceholder')}
             value={name}
             onChange={(e) => setName(e.target.value)}
             style={{ flex: 1 }}
           />
           <input
-            placeholder="Description (optional)"
+            placeholder={t('campaigns.descPlaceholder')}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             style={{ flex: 2 }}
           />
           <button className="btn" type="submit" disabled={creating || !name.trim() || !projectId}>
-            Create
+            {t('campaigns.create')}
           </button>
         </div>
         {error && <div className="error">{error}</div>}
@@ -115,20 +117,20 @@ export default function CampaignsPage() {
                   </div>
                 )}
                 <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
-                  {c.dailyVideoTarget}/day · {c.timezone}
+                  {t('campaigns.perDay', { n: c.dailyVideoTarget })} · {c.timezone}
                 </div>
               </div>
               <div className="wrap">
                 <span className={`badge ${statusBadge(c.status)}`}>{c.status}</span>
-                <span className="badge accent">{c._count.assignments} channels</span>
-                <span className="badge">{c._count.series} series</span>
-                <span className="badge">{c._count.contents} contents</span>
+                <span className="badge accent">{t('campaigns.channels', { n: c._count.assignments })}</span>
+                <span className="badge">{t('campaigns.series', { n: c._count.series })}</span>
+                <span className="badge">{t('campaigns.contents', { n: c._count.contents })}</span>
               </div>
             </div>
           </Link>
         ))}
         {campaigns.length === 0 && (
-          <div className="card muted">No campaigns yet in this project. Create one above.</div>
+          <div className="card muted">{t('campaigns.empty')}</div>
         )}
       </div>
     </Shell>
