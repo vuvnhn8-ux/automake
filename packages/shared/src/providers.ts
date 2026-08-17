@@ -92,6 +92,7 @@ export const PROVIDER_GROUPS: ProviderGroupInfo[] = [
       { id: 'KLING', label: 'Kling', requiresKey: true },
       { id: 'RUNWAY', label: 'Runway', requiresKey: true },
       { id: 'PIXVERSE', label: 'PixVerse', requiresKey: true },
+      { id: 'AGNES', label: 'Agnes AI', requiresKey: true },
       { id: 'MOCK', label: 'Mock (offline)', requiresKey: false },
     ],
   },
@@ -249,16 +250,16 @@ export const PROVIDER_CATALOG: ProviderCatalogEntry[] = [
   {
     id: 'VEO', category: 'VIDEO', label: 'Google Veo',
     endpoint: 'https://generativelanguage.googleapis.com',
-    supportedModels: ['veo-3', 'veo-2'],
-    freeTier: false, paid: true, capabilities: ['text-to-video'],
-    docUrl: 'https://deepmind.google/technologies/veo/', activeByDefault: true,
+    supportedModels: ['veo-3.1', 'veo-3', 'veo-2'],
+    freeTier: true, paid: true, capabilities: ['text-to-video'],
+    docUrl: 'https://ai.google.dev/gemini-api/docs/models/veo', activeByDefault: true,
   },
   {
     id: 'KLING', category: 'VIDEO', label: 'Kling',
     endpoint: 'https://api.klingai.com',
-    supportedModels: ['kling-v2', 'kling-v1'],
-    freeTier: false, paid: true, capabilities: ['text-to-video'],
-    docUrl: 'https://docs.qingque.cn/kling', activeByDefault: true,
+    supportedModels: ['kling-v3', 'kling-v2', 'kling-v1'],
+    freeTier: true, paid: true, capabilities: ['text-to-video'],
+    docUrl: 'https://kling.ai/docs', activeByDefault: true,
   },
   {
     id: 'RUNWAY', category: 'VIDEO', label: 'Runway',
@@ -273,6 +274,13 @@ export const PROVIDER_CATALOG: ProviderCatalogEntry[] = [
     supportedModels: ['pixverse-v4'],
     freeTier: false, paid: true, capabilities: ['text-to-video'],
     docUrl: 'https://pixverse.ai/docs', activeByDefault: true,
+  },
+  {
+    id: 'AGNES', category: 'VIDEO', label: 'Agnes AI',
+    endpoint: 'https://apihub.agnes-ai.com/v1',
+    supportedModels: ['agnes-video-v2.0'],
+    freeTier: true, paid: false, capabilities: ['text-to-video', 'image-to-video'],
+    docUrl: 'https://wiki.agnes-ai.com/en/docs/agnes-video-v20', activeByDefault: true,
   },
   {
     id: 'ELEVENLABS', category: 'VOICE', label: 'ElevenLabs',
@@ -307,6 +315,7 @@ export const KEY_ENV_BY_PROVIDER: Record<string, string> = {
   KLING: 'KLING_API_KEY',
   PIXVERSE: 'PIXVERSE_API_KEY',
   VEO: 'GOOGLE_VEO_API_KEY',
+  AGNES: 'AGNES_API_KEY',
 };
 
 export const MODEL_ENV_BY_PROVIDER: Record<string, string> = {

@@ -109,3 +109,85 @@ export class RunwayVideoProvider implements VideoProvider {
     throw mediaError('TIMEOUT', this.name, 'Runway generation timed out while polling');
   }
 }
+
+/** Agnes AI video generation — completely free, async text-to-video via REST. */
+export class AgnesVideoProvider implements VideoProvider {
+  readonly name = 'AGNES' as const;
+  readonly model = 'agnes-video-v2.0';
+
+  async generateVideo(input: VideoGenerationInput): Promise<GeneratedAsset> {
+    const apiKey = env.AGNES_API_KEY;
+    if (!apiKey) {
+      throw mediaError('AUTH_ERROR', this.name, 'AGNES_API_KEY is not configured');
+    }
+    const base = env.AGNES_API_URL;
+
+    const [w, h] = (input.resolution ?? '1152x768').split('x').map(Number);
+    const durationSec = input.durationSeconds ?? 5;
+    const numFrames = Math.min(441, Math.max(9, Math.round(durationSec * 24) + 1));
+
+    const createRes = await fetch(`${base}/videos`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: this.model,
+        prompt: input.prompt,
+        ...(input.imageUrl ? { image: input.imageUrl } : {}),
+        width: w || 1152,
+        height: h || 768,
+        num_frames: numFrames,
+        frame_rate: 24,
+      }),
+    });
+    const raw = await createRes.text();
+    if (!createRes.ok) {
+      throw mediaError('PROVIDER_ERROR', this.name, `Agnes HTTP ${createRes.status}: ${raw.slice(0, 200)}`, true);
+    }
+    const json = JSON.parse(raw) as { video_id?: string; task_id?: string; error?: string };
+    const videoId = json.video_id ?? json.task_id;
+    if (!videoId) {
+      throw mediaError('PROVIDER_ERROR', this.name, `Agnes did not return a video_id: ${raw.slice(0, 200)}`);
+    }
+
+    const result = await this.pollResult(videoId, apiKey);
+    const videoUrl = result.video_url ?? result.url ?? result.output;
+    if (!videoUrl || typeof videoUrl !== 'string') {
+      throw mediaError('PROVIDER_ERROR', this.name, `Agnes task failed: ${JSON.stringify(result).slice(0, 200)}`);
+    }
+
+    const fetched = await fetch(videoUrl);
+    if (!fetched.ok) {
+      throw mediaError('PROVIDER_ERROR', this.name, `Agnes video download failed: HTTP ${fetched.status}`, true);
+    }
+    return {
+      data: Buffer.from(await fetched.arrayBuffer()),
+      mimeType: 'video/mp4',
+      provider: this.name,
+      model: this.model,
+    };
+  }
+
+  private async pollResult(videoId: string, apiKey: string): Promise<Record<string, unknown>> {
+    const base = env.AGNES_API_URL;
+    for (let i = 0; i < 120; i++) {
+      const res = await fetch(`${base.replace(/\/v1$/, '')}/agnesapi?video_id=${encodeURIComponent(videoId)}`, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
+      if (res.ok) {
+        const json = (await res.json()) as Record<string, unknown>;
+        const status = json.status ?? json.state;
+        if (status === 'succeeded' || status === 'completed' || status === 'done') {
+          return json;
+        }
+        if (status === 'failed' || status === 'error') {
+          throw mediaError('PROVIDER_ERROR', this.name, `Agnes generation failed: ${JSON.stringify(json).slice(0, 200)}`);
+        }
+      }
+      await new Promise((r) => setTimeout(r, 5000));
+    }
+    throw mediaError('TIMEOUT', this.name, 'Agnes generation timed out while polling');
+  }
+}

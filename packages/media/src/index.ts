@@ -2,7 +2,7 @@ import { env } from '@avf/config';
 import type { ImageProvider, VideoProvider, VoiceProvider } from './types.js';
 import { OpenAIImageProvider } from './image/openai.js';
 import { MockImageProvider } from './image/mock.js';
-import { MockVideoProvider, RunwayVideoProvider } from './video/providers.js';
+import { MockVideoProvider, RunwayVideoProvider, AgnesVideoProvider } from './video/providers.js';
 import {
   ElevenLabsVoiceProvider,
   GoogleVoiceProvider,
@@ -24,6 +24,8 @@ export function createVideoProvider(): VideoProvider {
   switch (env.VIDEO_PROVIDER) {
     case 'RUNWAY':
       return new RunwayVideoProvider();
+    case 'AGNES':
+      return new AgnesVideoProvider();
     case 'VEO':
     case 'KLING':
       // These are wired through the same interface; without credentials the
@@ -62,7 +64,7 @@ export type {
 export { MediaProviderError, mediaError, fetchBinary } from './types.js';
 export { OpenAIImageProvider } from './image/openai.js';
 export { MockImageProvider } from './image/mock.js';
-export { MockVideoProvider, RunwayVideoProvider } from './video/providers.js';
+export { MockVideoProvider, RunwayVideoProvider, AgnesVideoProvider } from './video/providers.js';
 export {
   OpenAIVoiceProvider,
   GoogleVoiceProvider,

@@ -46,12 +46,14 @@ const envSchema = z.object({
   IMAGE_PROVIDER: z.enum(['OPENAI', 'MOCK']).default('MOCK'),
   OPENAI_IMAGE_MODEL: z.string().default('gpt-image-1'),
 
-  VIDEO_PROVIDER: z.enum(['MOCK', 'VEO', 'KLING', 'RUNWAY']).default('MOCK'),
+  VIDEO_PROVIDER: z.enum(['MOCK', 'VEO', 'KLING', 'RUNWAY', 'AGNES']).default('MOCK'),
   GOOGLE_VEO_API_KEY: z.string().default(''),
   RUNWAY_API_KEY: z.string().default(''),
   RUNWAY_API_URL: z.string().url().default('https://api.dev.runwayml.com/v1'),
   KLING_API_KEY: z.string().default(''),
   KLING_API_URL: z.string().url().default('https://api.klingai.com/v1'),
+  AGNES_API_KEY: z.string().default(''),
+  AGNES_API_URL: z.string().url().default('https://apihub.agnes-ai.com/v1'),
 
   VOICE_PROVIDER: z
     .enum(['OPENAI', 'GOOGLE', 'ELEVENLABS', 'MOCK'])

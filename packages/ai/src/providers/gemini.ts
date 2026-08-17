@@ -47,6 +47,9 @@ export class GeminiProvider implements AIProvider {
     if (!this.apiKey) {
       throw new Error('Gemini provider requires GEMINI_API_KEY');
     }
+    if (!this.model) {
+      throw new Error('Gemini provider requires a model name (e.g. gemini-2.0-flash)');
+    }
   }
 
   async complete(req: AICompletionRequest): Promise<AICompletionResult> {
