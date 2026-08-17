@@ -114,8 +114,8 @@ export default function WorkersPage() {
                         borderRadius: 999,
                         fontSize: 12,
                         fontWeight: 600,
-                        background: w.online ? 'var(--ok-bg, #e6f4ea)' : 'var(--panel-2)',
-                        color: w.online ? 'var(--ok, #137333)' : 'var(--muted)',
+                        background: w.online ? 'var(--ok-bg)' : 'var(--panel-2)',
+                        color: w.online ? 'var(--ok)' : 'var(--muted)',
                       }}
                     >
                       {w.online ? w.status : t('workers.offline')}

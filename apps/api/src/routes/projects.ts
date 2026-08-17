@@ -5,14 +5,19 @@ import { PublishingModeSchema, VideoTemplateSchema } from '@avf/shared';
 import { parse, parseId } from '../lib/validate.js';
 import { getAuthUser } from '../plugins/auth.js';
 import { channelOwnershipWhere } from '../lib/channels.js';
+import { mergeProjectConfig } from '../lib/project-config.js';
 
 const CreateProjectSchema = z.object({
   name: z.string().min(1).max(200),
-  description: z.string().max(2000).optional(),
+  description: z.string().max(2000).nullable().optional(),
   language: z.string().min(2).max(16).optional(),
-  category: z.string().max(100).optional(),
+  category: z.string().max(100).nullable().optional(),
   defaultTemplate: VideoTemplateSchema.optional(),
-  defaultVoice: z.string().max(100).optional(),
+  defaultVoice: z.string().max(100).nullable().optional(),
+  defaultAIProvider: z.string().max(100).nullable().optional(),
+  defaultImageProvider: z.string().max(100).nullable().optional(),
+  defaultVideoProvider: z.string().max(100).nullable().optional(),
+  defaultVoiceProvider: z.string().max(100).nullable().optional(),
   defaultDurationSeconds: z.number().int().min(10).max(600).optional(),
   publishingMode: PublishingModeSchema.optional(),
   dailyVideoTarget: z.number().int().min(1).max(100).optional(),
@@ -160,7 +165,12 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(404).send({ error: 'not_found', message: 'Project not found' });
     }
 
-    const project = await prisma.project.update({ where: { id }, data: { config: body } });
+    // Merge patch into existing config so Content/Video/AI sections never wipe each other.
+    const merged = mergeProjectConfig(existing.config, body as Record<string, unknown>);
+    const project = await prisma.project.update({
+      where: { id },
+      data: { config: merged as object },
+    });
     return { project };
   });
 

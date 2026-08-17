@@ -400,8 +400,8 @@ function ProviderRow({
               value={model}
               onChange={(e) => setModel(e.target.value)}
             />
-            <button className="btn small" type="submit" disabled={busy || !apiKey.trim()}>
-              {t('providers.save')}
+            <button className="btn small" type="submit" disabled={busy}>
+              {busy ? t('common.saving') : t('providers.save')}
             </button>
             {canTest && (
               <button className="btn small secondary" type="button" onClick={() => void test()} disabled={busy}>

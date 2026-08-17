@@ -86,38 +86,53 @@ function TestButton({ channel, onDone }: { channel: Channel; onDone: () => void 
 // Create-channel wizard — name + platform + platform credentials + settings
 // ---------------------------------------------------------------------------
 
-const CREDENTIAL_FIELDS: Record<string, { key: string; label: string; type?: string }[]> = {
+type CredKey =
+  | 'appId'
+  | 'appSecret'
+  | 'pageName'
+  | 'pageAccessToken'
+  | 'apiKey'
+  | 'clientId'
+  | 'clientSecret'
+  | 'refreshToken'
+  | 'channelId'
+  | 'clientKey'
+  | 'accessToken'
+  | 'businessAccountId'
+  | 'consumerKey'
+  | 'consumerSecret'
+  | 'accessTokenSecret';
+
+const CREDENTIAL_FIELDS: Record<string, { key: CredKey; type?: string }[]> = {
   FACEBOOK: [
-    { key: 'appId', label: 'App ID' },
-    { key: 'appSecret', label: 'App Secret', type: 'password' },
-    { key: 'pageName', label: 'Tên Page' },
-    { key: 'pageAccessToken', label: 'Page Access Token', type: 'password' },
+    { key: 'appId' },
+    { key: 'appSecret', type: 'password' },
+    { key: 'pageName' },
+    { key: 'pageAccessToken', type: 'password' },
   ],
   YOUTUBE: [
-    { key: 'apiKey', label: 'API Key', type: 'password' },
-    { key: 'clientId', label: 'Client ID' },
-    { key: 'clientSecret', label: 'Client Secret', type: 'password' },
-    { key: 'refreshToken', label: 'Refresh Token', type: 'password' },
-    { key: 'channelId', label: 'Channel ID' },
+    { key: 'apiKey', type: 'password' },
+    { key: 'clientId' },
+    { key: 'clientSecret', type: 'password' },
+    { key: 'refreshToken', type: 'password' },
+    { key: 'channelId' },
   ],
   TIKTOK: [
-    { key: 'clientKey', label: 'Client Key' },
-    { key: 'clientSecret', label: 'Client Secret', type: 'password' },
-    { key: 'accessToken', label: 'Access Token', type: 'password' },
+    { key: 'clientKey' },
+    { key: 'clientSecret', type: 'password' },
+    { key: 'accessToken', type: 'password' },
   ],
   INSTAGRAM: [
-    { key: 'accessToken', label: 'Access Token', type: 'password' },
-    { key: 'businessAccountId', label: 'Business Account ID' },
+    { key: 'accessToken', type: 'password' },
+    { key: 'businessAccountId' },
   ],
   X: [
-    { key: 'consumerKey', label: 'Consumer Key', type: 'password' },
-    { key: 'consumerSecret', label: 'Consumer Secret', type: 'password' },
-    { key: 'accessToken', label: 'Access Token', type: 'password' },
-    { key: 'accessTokenSecret', label: 'Access Token Secret', type: 'password' },
+    { key: 'consumerKey', type: 'password' },
+    { key: 'consumerSecret', type: 'password' },
+    { key: 'accessToken', type: 'password' },
+    { key: 'accessTokenSecret', type: 'password' },
   ],
-  THREADS: [
-    { key: 'accessToken', label: 'Access Token', type: 'password' },
-  ],
+  THREADS: [{ key: 'accessToken', type: 'password' }],
 };
 
 function CreateChannelCard({ onDone }: { onDone: () => void }) {
@@ -194,23 +209,27 @@ function CreateChannelCard({ onDone }: { onDone: () => void }) {
       </div>
 
       {fields.length > 0 && (
-        <div className="card" style={{ background: 'var(--bg-subtle, #f8f9fa)', marginBottom: 16 }}>
+        <div className="card subtle" style={{ marginBottom: 16 }}>
           <div style={{ fontWeight: 600, marginBottom: 12 }}>
-            Thông tin API / Thông tin xác thực — {platform}
+            {t('channels.credsTitle', { platform })}
           </div>
-          {fields.map((f) => (
-            <div className="field" key={f.key}>
-              <label>{f.label}</label>
-              <input
-                type={f.type ?? 'text'}
-                value={credFields[f.key] ?? ''}
-                onChange={(e) => setCredFields((prev) => ({ ...prev, [f.key]: e.target.value }))}
-                placeholder={`Nhập ${f.label.toLowerCase()}...`}
-              />
-            </div>
-          ))}
+          {fields.map((f) => {
+            const labelKey = `channels.cred.${f.key}` as const;
+            const label = t(labelKey);
+            return (
+              <div className="field" key={f.key}>
+                <label>{label}</label>
+                <input
+                  type={f.type ?? 'text'}
+                  value={credFields[f.key] ?? ''}
+                  onChange={(e) => setCredFields((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                  placeholder={t('channels.credPlaceholder', { field: label })}
+                />
+              </div>
+            );
+          })}
           <div className="muted" style={{ fontSize: 12 }}>
-            Thông tin được mã hóa AES-256-GCM, không lưu dạng plaintext.
+            {t('channels.credsEncrypted')}
           </div>
         </div>
       )}

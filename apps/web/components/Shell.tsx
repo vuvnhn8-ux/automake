@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
+import { UnsavedChangesProvider } from '@/lib/UnsavedChangesContext';
 import Nav from './Nav';
 
 export default function Shell({ children }: { children: React.ReactNode }) {
@@ -20,9 +21,11 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div style={{ minHeight: '100vh' }}>
-      <Nav />
-      <main style={{ padding: '24px', maxWidth: 1080, margin: '0 auto' }}>{children}</main>
-    </div>
+    <UnsavedChangesProvider>
+      <div style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--text)' }}>
+        <Nav />
+        <main style={{ padding: '24px', maxWidth: 1080, margin: '0 auto' }}>{children}</main>
+      </div>
+    </UnsavedChangesProvider>
   );
 }

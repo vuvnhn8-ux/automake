@@ -1,11 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useId, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import Shell from '@/components/Shell';
 import { api } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
+import { useUnsavedChanges } from '@/lib/useUnsavedChanges';
+import { useUnsavedChangesRegistry } from '@/lib/UnsavedChangesContext';
 
 // ---------------------------------------------------------------------------
 // Types (mirror of the project API response)
@@ -117,6 +119,7 @@ const MODES = ['MANUAL', 'SEMI_AUTOMATIC', 'FULL_AUTOMATIC'];
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { t } = useI18n();
+  const unsaved = useUnsavedChangesRegistry();
   const [tab, setTab] = useState<Tab>('general');
   const [project, setProject] = useState<Project | null>(null);
   const [error, setError] = useState('');
@@ -131,6 +134,25 @@ export default function ProjectDetailPage() {
   }, [id]);
 
   useEffect(load, [load]);
+
+  const switchTab = (next: Tab) => {
+    if (next === tab) return;
+    if (unsaved && !unsaved.allowNavigation()) return;
+    setTab(next);
+    setSaved('');
+    setError('');
+  };
+
+  const reload = useCallback(() => {
+    load();
+  }, [load]);
+  const notice = useCallback((msg: string) => {
+    setSaved(msg);
+    setError('');
+  }, []);
+  const err = useCallback((msg: string) => {
+    setError(msg);
+  }, []);
 
   if (!project) {
     return (
@@ -147,7 +169,14 @@ export default function ProjectDetailPage() {
     <Shell>
       <div className="spread" style={{ marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
         <div>
-          <Link href="/projects" className="muted" style={{ fontSize: 13 }}>
+          <Link
+            href="/projects"
+            className="muted"
+            style={{ fontSize: 13 }}
+            onClick={(e) => {
+              if (unsaved && !unsaved.allowNavigation()) e.preventDefault();
+            }}
+          >
             ← {t('pct.backProjects')}
           </Link>
           <h2 style={{ margin: 0, marginTop: 4 }}>{project.name}</h2>
@@ -176,38 +205,42 @@ export default function ProjectDetailPage() {
       </div>
 
       {error && <div className="error" style={{ marginBottom: 12 }}>{error}</div>}
-      {saved && <div className="muted" style={{ color: 'var(--ok)', marginBottom: 12 }}>{saved}</div>}
+      {saved && <div className="notice-ok">{saved}</div>}
 
       <div className="row" style={{ gap: 6, flexWrap: 'wrap', marginBottom: 20 }}>
         {TABS.map((key) => (
           <button
             key={key}
             className={`btn small ${tab === key ? '' : 'secondary'}`}
-            onClick={() => setTab(key)}
+            onClick={() => switchTab(key)}
           >
             {t(`pct.tab.${key}`)}
           </button>
         ))}
       </div>
 
-      {tab === 'general' && <GeneralTab project={project} onSaved={reload} onNotice={notice} onError={err} />}      {tab === 'content' && <ContentTab project={project} onSaved={reload} onNotice={notice} onError={err} />}
+      {tab === 'general' && <GeneralTab project={project} onSaved={reload} onNotice={notice} onError={err} />}
+      {tab === 'content' && <ContentTab project={project} onSaved={reload} onNotice={notice} onError={err} />}
       {tab === 'video' && <VideoTab project={project} onSaved={reload} onNotice={notice} onError={err} />}
       {tab === 'topics' && <TopicsTab projectId={id} onSaved={reload} onNotice={notice} onError={err} />}
-      {tab === 'schedule' && <ScheduleTab projectId={id} onSaved={reload} onNotice={notice} onError={err} />}
+      {tab === 'schedule' && <ScheduleTab projectId={id} projectTimezone={project.timezone} onSaved={reload} onNotice={notice} onError={err} />}
       {tab === 'channels' && <ChannelsTab project={project} onSaved={reload} onNotice={notice} onError={err} />}
       {tab === 'ai' && <AiTab project={project} onSaved={reload} onNotice={notice} onError={err} />}
     </Shell>
   );
+}
 
-  function reload() {
-    load();
-  }
-  function notice(msg: string) {
-    setSaved(msg);
-  }
-  function err(msg: string) {
-    setError(msg);
-  }
+/** Registers dirty guard with Shell nav + beforeunload. */
+function useFormDirtyGuard(dirty: boolean, confirmLeave: () => boolean) {
+  const registry = useUnsavedChangesRegistry();
+  const id = useId();
+  useEffect(() => {
+    if (!registry) return;
+    return registry.register(id, () => {
+      if (!dirty) return true;
+      return confirmLeave();
+    });
+  }, [registry, id, dirty, confirmLeave]);
 }
 
 // ---------------------------------------------------------------------------
@@ -243,6 +276,9 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function GeneralTab({ project, onSaved, onNotice, onError }: { project: Project; onSaved: () => void; onNotice: (m: string) => void; onError: (m: string) => void }) {
   const { t } = useI18n();
+  const leaveMsg = t('common.unsavedConfirm');
+  const { dirty, markDirty, markClean, confirmNavigation } = useUnsavedChanges(leaveMsg);
+  useFormDirtyGuard(dirty, confirmNavigation);
   const [name, setName] = useState(project.name);
   const [description, setDescription] = useState(project.description ?? '');
   const [language, setLanguage] = useState(project.language);
@@ -252,6 +288,11 @@ function GeneralTab({ project, onSaved, onNotice, onError }: { project: Project;
   const [duration, setDuration] = useState(project.defaultDurationSeconds);
   const [saving, setSaving] = useState(false);
 
+  const touch = <T,>(setter: (v: T) => void) => (v: T) => {
+    markDirty();
+    setter(v);
+  };
+
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
@@ -260,7 +301,7 @@ function GeneralTab({ project, onSaved, onNotice, onError }: { project: Project;
         method: 'PATCH',
         body: {
           name,
-          description: description || undefined,
+          description: description || null,
           language,
           timezone,
           publishingMode,
@@ -268,6 +309,7 @@ function GeneralTab({ project, onSaved, onNotice, onError }: { project: Project;
           defaultDurationSeconds: duration,
         },
       });
+      markClean();
       onNotice(t('pct.saved'));
       onSaved();
     } catch (err) {
@@ -280,21 +322,24 @@ function GeneralTab({ project, onSaved, onNotice, onError }: { project: Project;
   return (
     <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(300px,1fr))', alignItems: 'start' }}>
       <form onSubmit={(e) => void save(e)} className="card">
-        <h3 style={{ marginTop: 0 }}>{t('pct.general')}</h3>
+        <h3 style={{ marginTop: 0 }}>
+          {t('pct.general')}
+          {dirty && <span className="dirty-dot" title={t('common.unsaved')} />}
+        </h3>
         <Field label={t('pct.name')}>
-          <input value={name} onChange={(e) => setName(e.target.value)} required />
+          <input value={name} onChange={(e) => touch(setName)(e.target.value)} required />
         </Field>
         <Field label={t('pct.description')}>
-          <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} />
+          <textarea value={description} onChange={(e) => touch(setDescription)(e.target.value)} rows={3} />
         </Field>
         <Field label={t('pct.language')}>
-          <input value={language} onChange={(e) => setLanguage(e.target.value)} placeholder="vi-VN" />
+          <input value={language} onChange={(e) => touch(setLanguage)(e.target.value)} placeholder="vi-VN" />
         </Field>
         <Field label={t('pct.timezone')}>
-          <input value={timezone} onChange={(e) => setTimezone(e.target.value)} placeholder="Asia/Tokyo" />
+          <input value={timezone} onChange={(e) => touch(setTimezone)(e.target.value)} placeholder="Asia/Tokyo" />
         </Field>
         <Field label={t('pct.publishingMode')}>
-          <select value={publishingMode} onChange={(e) => setPublishingMode(e.target.value)}>
+          <select value={publishingMode} onChange={(e) => touch(setPublishingMode)(e.target.value)}>
             {MODES.map((m) => (
               <option key={m} value={m}>{m}</option>
             ))}
@@ -302,14 +347,14 @@ function GeneralTab({ project, onSaved, onNotice, onError }: { project: Project;
         </Field>
         <div className="row" style={{ gap: 12 }}>
           <Field label={t('pct.videosPerDay')}>
-            <input type="number" min={1} max={100} value={dailyVideoTarget} onChange={(e) => setDailyVideoTarget(Number(e.target.value))} />
+            <input type="number" min={1} max={100} value={dailyVideoTarget} onChange={(e) => touch(setDailyVideoTarget)(Number(e.target.value))} />
           </Field>
           <Field label={t('pct.duration')}>
-            <input type="number" min={10} max={600} value={duration} onChange={(e) => setDuration(Number(e.target.value))} />
+            <input type="number" min={10} max={600} value={duration} onChange={(e) => touch(setDuration)(Number(e.target.value))} />
           </Field>
         </div>
         <button className="btn" type="submit" disabled={saving || !name.trim()}>
-          {saving ? '…' : t('pct.saveGeneral')}
+          {saving ? t('common.saving') : t('pct.saveGeneral')}
         </button>
       </form>
 
@@ -368,6 +413,9 @@ function RecentContents({ projectId, onError }: { projectId: string; onError: (m
 
 function ContentTab({ project, onSaved, onNotice, onError }: { project: Project; onSaved: () => void; onNotice: (m: string) => void; onError: (m: string) => void }) {
   const { t } = useI18n();
+  const leaveMsg = t('common.unsavedConfirm');
+  const { dirty, markDirty, markClean, confirmNavigation } = useUnsavedChanges(leaveMsg);
+  useFormDirtyGuard(dirty, confirmNavigation);
   const [theme, setTheme] = useState(stringConfig(project.config, 'contentTheme'));
   const [keywords, setKeywords] = useState(arrayConfig(project.config, 'keywords').join(', '));
   const [instructions, setInstructions] = useState(stringConfig(project.config, 'contentInstructions'));
@@ -378,23 +426,30 @@ function ContentTab({ project, onSaved, onNotice, onError }: { project: Project;
   const [voiceTone, setVoiceTone] = useState(stringConfig(project.config, 'voiceTone'));
   const [saving, setSaving] = useState(false);
 
+  const touch = <T,>(setter: (v: T) => void) => (v: T) => {
+    markDirty();
+    setter(v);
+  };
+
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     try {
+      // Section-only patch — server merges into existing config (does not wipe video keys).
       await api(`/api/projects/${project.id}/config`, {
         method: 'PUT',
         body: {
-          contentTheme: theme || undefined,
+          contentTheme: theme,
           keywords: keywords.split(',').map((k) => k.trim()).filter(Boolean),
-          contentInstructions: instructions || undefined,
-          avoid: avoid || undefined,
-          targetAudience: audience || undefined,
-          contentLanguage: contentLanguage || undefined,
-          voiceLanguage: voiceLanguage || undefined,
-          voiceTone: voiceTone || undefined,
+          contentInstructions: instructions,
+          avoid,
+          targetAudience: audience,
+          contentLanguage: contentLanguage || project.language,
+          voiceLanguage: voiceLanguage || project.language,
+          voiceTone,
         },
       });
+      markClean();
       onNotice(t('pct.saved'));
       onSaved();
     } catch (err) {
@@ -406,36 +461,39 @@ function ContentTab({ project, onSaved, onNotice, onError }: { project: Project;
 
   return (
     <form onSubmit={(e) => void save(e)} className="card" style={{ maxWidth: 720 }}>
-      <h3 style={{ marginTop: 0 }}>{t('pct.content')}</h3>
+      <h3 style={{ marginTop: 0 }}>
+        {t('pct.content')}
+        {dirty && <span className="dirty-dot" title={t('common.unsaved')} />}
+      </h3>
       <div className="muted" style={{ marginBottom: 16 }}>{t('pct.contentIntro')}</div>
       <Field label={t('pct.theme')}>
-        <textarea value={theme} onChange={(e) => setTheme(e.target.value)} rows={2} placeholder={t('pct.themePlaceholder')} />
+        <textarea value={theme} onChange={(e) => touch(setTheme)(e.target.value)} rows={2} placeholder={t('pct.themePlaceholder')} />
       </Field>
       <Field label={t('pct.keywords')}>
-        <input value={keywords} onChange={(e) => setKeywords(e.target.value)} placeholder={t('pct.keywordsPlaceholder')} />
+        <input value={keywords} onChange={(e) => touch(setKeywords)(e.target.value)} placeholder={t('pct.keywordsPlaceholder')} />
       </Field>
       <Field label={t('pct.audience')}>
-        <textarea value={audience} onChange={(e) => setAudience(e.target.value)} rows={2} />
+        <textarea value={audience} onChange={(e) => touch(setAudience)(e.target.value)} rows={2} />
       </Field>
       <Field label={t('pct.instructions')}>
-        <textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} rows={4} />
+        <textarea value={instructions} onChange={(e) => touch(setInstructions)(e.target.value)} rows={4} />
       </Field>
       <Field label={t('pct.avoid')}>
-        <textarea value={avoid} onChange={(e) => setAvoid(e.target.value)} rows={2} />
+        <textarea value={avoid} onChange={(e) => touch(setAvoid)(e.target.value)} rows={2} />
       </Field>
       <div className="row" style={{ gap: 12 }}>
         <Field label={t('pct.contentLanguage')}>
-          <input value={contentLanguage} onChange={(e) => setContentLanguage(e.target.value)} placeholder="vi-VN" />
+          <input value={contentLanguage} onChange={(e) => touch(setContentLanguage)(e.target.value)} placeholder="vi-VN" />
         </Field>
         <Field label={t('pct.voiceLanguage')}>
-          <input value={voiceLanguage} onChange={(e) => setVoiceLanguage(e.target.value)} placeholder="vi-VN" />
+          <input value={voiceLanguage} onChange={(e) => touch(setVoiceLanguage)(e.target.value)} placeholder="vi-VN" />
         </Field>
         <Field label={t('pct.voiceTone')}>
-          <input value={voiceTone} onChange={(e) => setVoiceTone(e.target.value)} placeholder="PROFESSIONAL" />
+          <input value={voiceTone} onChange={(e) => touch(setVoiceTone)(e.target.value)} placeholder="PROFESSIONAL" />
         </Field>
       </div>
       <button className="btn" type="submit" disabled={saving}>
-        {saving ? '…' : t('pct.saveContent')}
+        {saving ? t('common.saving') : t('pct.saveContent')}
       </button>
     </form>
   );
@@ -447,6 +505,9 @@ function ContentTab({ project, onSaved, onNotice, onError }: { project: Project;
 
 function VideoTab({ project, onSaved, onNotice, onError }: { project: Project; onSaved: () => void; onNotice: (m: string) => void; onError: (m: string) => void }) {
   const { t } = useI18n();
+  const leaveMsg = t('common.unsavedConfirm');
+  const { dirty, markDirty, markClean, confirmNavigation } = useUnsavedChanges(leaveMsg);
+  useFormDirtyGuard(dirty, confirmNavigation);
   const [aspectRatio, setAspectRatio] = useState(stringConfig(project.config, 'aspectRatio') || '9:16');
   const [resolution, setResolution] = useState(stringConfig(project.config, 'resolution'));
   const [durationTarget, setDurationTarget] = useState(Number(stringConfig(project.config, 'durationTarget')) || project.defaultDurationSeconds);
@@ -458,26 +519,33 @@ function VideoTab({ project, onSaved, onNotice, onError }: { project: Project; o
   const [template, setTemplate] = useState(project.defaultTemplate);
   const [saving, setSaving] = useState(false);
 
+  const touch = <T,>(setter: (v: T) => void) => (v: T) => {
+    markDirty();
+    setter(v);
+  };
+
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     try {
+      // Section-only patch — server merges; content keys are preserved.
       await api(`/api/projects/${project.id}/config`, {
         method: 'PUT',
         body: {
           aspectRatio,
-          resolution: resolution || undefined,
+          resolution,
           durationTarget,
-          visualStyle: visualStyle || undefined,
-          imageStyle: imageStyle || undefined,
-          videoStyle: videoStyle || undefined,
-          subtitleStyle: subtitleStyle || undefined,
+          visualStyle,
+          imageStyle,
+          videoStyle,
+          subtitleStyle,
         },
       });
       await api(`/api/projects/${project.id}`, {
         method: 'PATCH',
-        body: { defaultVoice: voice || undefined, defaultTemplate: template },
+        body: { defaultVoice: voice || null, defaultTemplate: template },
       });
+      markClean();
       onNotice(t('pct.saved'));
       onSaved();
     } catch (err) {
@@ -489,43 +557,46 @@ function VideoTab({ project, onSaved, onNotice, onError }: { project: Project; o
 
   return (
     <form onSubmit={(e) => void save(e)} className="card" style={{ maxWidth: 720 }}>
-      <h3 style={{ marginTop: 0 }}>{t('pct.video')}</h3>
+      <h3 style={{ marginTop: 0 }}>
+        {t('pct.video')}
+        {dirty && <span className="dirty-dot" title={t('common.unsaved')} />}
+      </h3>
       <div className="muted" style={{ marginBottom: 16 }}>{t('pct.videoIntro')}</div>
       <div className="row" style={{ gap: 12 }}>
         <Field label={t('pct.aspectRatio')}>
-          <select value={aspectRatio} onChange={(e) => setAspectRatio(e.target.value)}>
+          <select value={aspectRatio} onChange={(e) => touch(setAspectRatio)(e.target.value)}>
             {['9:16', '16:9', '1:1'].map((r) => (
               <option key={r} value={r}>{r}</option>
             ))}
           </select>
         </Field>
         <Field label={t('pct.resolution')}>
-          <input value={resolution} onChange={(e) => setResolution(e.target.value)} placeholder="1080x1920" />
+          <input value={resolution} onChange={(e) => touch(setResolution)(e.target.value)} placeholder="1080x1920" />
         </Field>
         <Field label={t('pct.durationTarget')}>
-          <input type="number" min={10} max={600} value={durationTarget} onChange={(e) => setDurationTarget(Number(e.target.value))} />
+          <input type="number" min={10} max={600} value={durationTarget} onChange={(e) => touch(setDurationTarget)(Number(e.target.value))} />
         </Field>
       </div>
       <Field label={t('pct.visualStyle')}>
-        <input value={visualStyle} onChange={(e) => setVisualStyle(e.target.value)} placeholder={t('pct.visualStylePlaceholder')} />
+        <input value={visualStyle} onChange={(e) => touch(setVisualStyle)(e.target.value)} placeholder={t('pct.visualStylePlaceholder')} />
       </Field>
       <div className="row" style={{ gap: 12 }}>
         <Field label={t('pct.imageStyle')}>
-          <input value={imageStyle} onChange={(e) => setImageStyle(e.target.value)} />
+          <input value={imageStyle} onChange={(e) => touch(setImageStyle)(e.target.value)} />
         </Field>
         <Field label={t('pct.videoStyle')}>
-          <input value={videoStyle} onChange={(e) => setVideoStyle(e.target.value)} />
+          <input value={videoStyle} onChange={(e) => touch(setVideoStyle)(e.target.value)} />
         </Field>
       </div>
       <Field label={t('pct.subtitleStyle')}>
-        <input value={subtitleStyle} onChange={(e) => setSubtitleStyle(e.target.value)} />
+        <input value={subtitleStyle} onChange={(e) => touch(setSubtitleStyle)(e.target.value)} />
       </Field>
       <div className="row" style={{ gap: 12 }}>
         <Field label={t('pct.voice')}>
-          <input value={voice} onChange={(e) => setVoice(e.target.value)} placeholder={t('pct.voicePlaceholder')} />
+          <input value={voice} onChange={(e) => touch(setVoice)(e.target.value)} placeholder={t('pct.voicePlaceholder')} />
         </Field>
         <Field label={t('pct.template')}>
-          <select value={template} onChange={(e) => setTemplate(e.target.value)}>
+          <select value={template} onChange={(e) => touch(setTemplate)(e.target.value)}>
             {['DEFAULT_REELS', 'NEWS', 'FACTS', 'TOP5', 'STORY', 'EDUCATIONAL'].map((v) => (
               <option key={v} value={v}>{v}</option>
             ))}
@@ -533,7 +604,7 @@ function VideoTab({ project, onSaved, onNotice, onError }: { project: Project; o
         </Field>
       </div>
       <button className="btn" type="submit" disabled={saving}>
-        {saving ? '…' : t('pct.saveVideo')}
+        {saving ? t('common.saving') : t('pct.saveVideo')}
       </button>
     </form>
   );
@@ -708,14 +779,26 @@ function TopicsTab({ projectId, onSaved, onNotice, onError }: { projectId: strin
 // Schedule / Automation tab
 // ---------------------------------------------------------------------------
 
-function ScheduleTab({ projectId, onSaved, onNotice, onError }: { projectId: string; onSaved: () => void; onNotice: (m: string) => void; onError: (m: string) => void }) {
+function ScheduleTab({
+  projectId,
+  projectTimezone,
+  onSaved,
+  onNotice,
+  onError,
+}: {
+  projectId: string;
+  projectTimezone: string;
+  onSaved: () => void;
+  onNotice: (m: string) => void;
+  onError: (m: string) => void;
+}) {
   const { t } = useI18n();
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [topics, setTopics] = useState<{ id: string; name: string }[]>([]);
   const [name, setName] = useState('');
   const [times, setTimes] = useState<string[]>(['08:00']);
   const [days, setDays] = useState<string[]>([]);
-  const [timezone, setTimezone] = useState('Asia/Tokyo');
+  const [timezone, setTimezone] = useState(projectTimezone || 'Asia/Tokyo');
   const [topicId, setTopicId] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -865,9 +948,13 @@ function ScheduleTab({ projectId, onSaved, onNotice, onError }: { projectId: str
 
 function ChannelsTab({ project, onSaved, onNotice, onError }: { project: Project; onSaved: () => void; onNotice: (m: string) => void; onError: (m: string) => void }) {
   const { t } = useI18n();
+  const leaveMsg = t('common.unsavedConfirm');
+  const { dirty, markDirty, markClean, confirmNavigation } = useUnsavedChanges(leaveMsg);
+  useFormDirtyGuard(dirty, confirmNavigation);
   const [channels, setChannels] = useState<GlobalChannel[]>([]);
   const [selected, setSelected] = useState<Record<string, { enabled: boolean; priority: number }>>({});
   const [busy, setBusy] = useState(false);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     api<{ channels: GlobalChannel[] }>('/api/channels')
@@ -875,17 +962,16 @@ function ChannelsTab({ project, onSaved, onNotice, onError }: { project: Project
       .catch((e) => onError(e.message));
   }, [onError]);
 
+  // Always rebuild selection from server assignments (including empty → clear stale checks).
   useEffect(() => {
-    if (project.channelAssignments.length > 0) {
-      setSelected((prev) => {
-        const next = { ...prev };
-        for (const a of project.channelAssignments) {
-          next[a.channel.id] = { enabled: a.enabled, priority: a.priority };
-        }
-        return next;
-      });
+    const next: Record<string, { enabled: boolean; priority: number }> = {};
+    for (const a of project.channelAssignments) {
+      next[a.channel.id] = { enabled: a.enabled, priority: a.priority };
     }
-  }, [project.channelAssignments]);
+    setSelected(next);
+    markClean();
+    setLoaded(true);
+  }, [project.channelAssignments, markClean]);
 
   const save = async () => {
     setBusy(true);
@@ -898,6 +984,7 @@ function ChannelsTab({ project, onSaved, onNotice, onError }: { project: Project
             .map(([publishingChannelId, v]) => ({ publishingChannelId, enabled: true, priority: v.priority })),
         },
       });
+      markClean();
       onNotice(t('pct.assignSaved'));
       onSaved();
     } catch (err) {
@@ -907,69 +994,95 @@ function ChannelsTab({ project, onSaved, onNotice, onError }: { project: Project
     }
   };
 
-  const setFlag = (id: string, flag: boolean) =>
+  const setFlag = (id: string, flag: boolean) => {
+    markDirty();
     setSelected((prev) => ({ ...prev, [id]: { enabled: flag, priority: prev[id]?.priority ?? 1 } }));
-  const setPriority = (id: string, priority: number) =>
+  };
+  const setPriority = (id: string, priority: number) => {
+    markDirty();
     setSelected((prev) => ({ ...prev, [id]: { enabled: prev[id]?.enabled ?? true, priority } }));
+  };
+
+  const byPlatform = channels.reduce<Record<string, GlobalChannel[]>>((acc, c) => {
+    (acc[c.platform] ??= []).push(c);
+    return acc;
+  }, {});
+  const platforms = Object.keys(byPlatform).sort();
 
   return (
     <div>
       <div className="card" style={{ marginBottom: 16 }}>
-        <h3 style={{ marginTop: 0 }}>{t('pct.assignChannels')}</h3>
+        <h3 style={{ marginTop: 0 }}>
+          {t('pct.assignChannels')}
+          {dirty && <span className="dirty-dot" title={t('common.unsaved')} />}
+        </h3>
         <div className="muted" style={{ marginBottom: 16 }}>{t('pct.assignIntro')}</div>
-        <table>
-          <thead>
-            <tr>
-              <th>{t('pct.channel')}</th>
-              <th>{t('pct.platform')}</th>
-              <th>{t('pct.connection')}</th>
-              <th>{t('pct.enabled')}</th>
-              <th>{t('pct.priority')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {channels.map((c) => {
-              const entry = selected[c.id] ?? { enabled: false, priority: 1 };
-              return (
-                <tr key={c.id}>
-                  <td>
-                    <strong>{c.name}</strong>
-                    {!c.isActive && <span className="badge warn" style={{ marginLeft: 8 }}>{t('pct.disabled')}</span>}
-                  </td>
-                  <td className="muted">{c.platform}</td>
-                  <td>
-                    <span className={`badge ${c.connectionStatus === 'CONNECTED' ? 'ok' : 'warn'}`}>
-                      {c.connectionStatus ?? t('pct.neverTested')}
-                    </span>
-                  </td>
-                  <td>
-                    <input type="checkbox" checked={entry.enabled} onChange={(e) => setFlag(c.id, e.target.checked)} />
-                  </td>
-                  <td>
-                    <input
-                      type="number"
-                      min={1}
-                      max={100}
-                      value={entry.priority}
-                      onChange={(e) => setPriority(c.id, Number(e.target.value))}
-                      style={{ width: 70 }}
-                    />
-                  </td>
-                </tr>
-              );
-            })}
-            {channels.length === 0 && (
-              <tr>
-                <td colSpan={5} className="muted">{t('pct.noGlobalChannels')}</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+        {!loaded ? (
+          <div className="muted">{t('pct.loading')}</div>
+        ) : (
+          platforms.map((platform) => (
+            <div key={platform} style={{ marginBottom: 20 }}>
+              <div style={{ fontWeight: 600, marginBottom: 8 }}>{platform}</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>{t('pct.channel')}</th>
+                    <th>{t('pct.connection')}</th>
+                    <th>{t('pct.enabled')}</th>
+                    <th>{t('pct.priority')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(byPlatform[platform] ?? []).map((c) => {
+                    const entry = selected[c.id] ?? { enabled: false, priority: 1 };
+                    return (
+                      <tr key={c.id}>
+                        <td>
+                          <strong>{c.name}</strong>
+                          {!c.isActive && <span className="badge warn" style={{ marginLeft: 8 }}>{t('pct.disabled')}</span>}
+                        </td>
+                        <td>
+                          <span className={`badge ${c.connectionStatus === 'CONNECTED' ? 'ok' : 'warn'}`}>
+                            {c.connectionStatus ?? t('pct.neverTested')}
+                          </span>
+                        </td>
+                        <td>
+                          <input type="checkbox" checked={entry.enabled} onChange={(e) => setFlag(c.id, e.target.checked)} />
+                        </td>
+                        <td>
+                          <input
+                            type="number"
+                            min={1}
+                            max={100}
+                            value={entry.priority}
+                            onChange={(e) => setPriority(c.id, Number(e.target.value))}
+                            style={{ width: 70 }}
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ))
+        )}
+        {loaded && channels.length === 0 && (
+          <div className="muted" style={{ marginBottom: 12 }}>{t('pct.noGlobalChannels')}</div>
+        )}
         <div className="row" style={{ marginTop: 16, gap: 8 }}>
           <button className="btn" onClick={() => void save()} disabled={busy}>
-            {busy ? '…' : t('pct.saveAssignments')}
+            {busy ? t('common.saving') : t('pct.saveAssignments')}
           </button>
-          <Link href="/channels" className="btn secondary">{t('pct.manageChannels')}</Link>
+          <Link
+            href="/channels"
+            className="btn secondary"
+            onClick={(e) => {
+              if (!confirmNavigation()) e.preventDefault();
+            }}
+          >
+            {t('pct.manageChannels')}
+          </Link>
         </div>
       </div>
     </div>
@@ -982,6 +1095,9 @@ function ChannelsTab({ project, onSaved, onNotice, onError }: { project: Project
 
 function AiTab({ project, onSaved, onNotice, onError }: { project: Project; onSaved: () => void; onNotice: (m: string) => void; onError: (m: string) => void }) {
   const { t } = useI18n();
+  const leaveMsg = t('common.unsavedConfirm');
+  const { dirty, markDirty, markClean, confirmNavigation } = useUnsavedChanges(leaveMsg);
+  useFormDirtyGuard(dirty, confirmNavigation);
   const [groups, setGroups] = useState<ProviderGroup[]>([]);
   const [ai, setAi] = useState(project.defaultAIProvider ?? '');
   const [image, setImage] = useState(project.defaultImageProvider ?? '');
@@ -994,6 +1110,21 @@ function AiTab({ project, onSaved, onNotice, onError }: { project: Project; onSa
       .then((d) => setGroups(d.groups))
       .catch((e) => onError(e.message));
   }, [onError]);
+
+  // Resync from server when project reloads after save.
+  useEffect(() => {
+    setAi(project.defaultAIProvider ?? '');
+    setImage(project.defaultImageProvider ?? '');
+    setVideo(project.defaultVideoProvider ?? '');
+    setVoice(project.defaultVoiceProvider ?? '');
+    markClean();
+  }, [
+    project.defaultAIProvider,
+    project.defaultImageProvider,
+    project.defaultVideoProvider,
+    project.defaultVoiceProvider,
+    markClean,
+  ]);
 
   const fieldFor = (group: string): { value: string; set: (v: string) => void } | null => {
     switch (group) {
@@ -1017,12 +1148,13 @@ function AiTab({ project, onSaved, onNotice, onError }: { project: Project; onSa
       await api(`/api/projects/${project.id}`, {
         method: 'PATCH',
         body: {
-          defaultAIProvider: ai || undefined,
-          defaultImageProvider: image || undefined,
-          defaultVideoProvider: video || undefined,
-          defaultVoiceProvider: voice || undefined,
+          defaultAIProvider: ai || null,
+          defaultImageProvider: image || null,
+          defaultVideoProvider: video || null,
+          defaultVoiceProvider: voice || null,
         },
       });
+      markClean();
       onNotice(t('pct.saved'));
       onSaved();
     } catch (err) {
@@ -1034,14 +1166,23 @@ function AiTab({ project, onSaved, onNotice, onError }: { project: Project; onSa
 
   return (
     <form onSubmit={(e) => void save(e)} className="card" style={{ maxWidth: 720 }}>
-      <h3 style={{ marginTop: 0 }}>{t('pct.ai')}</h3>
+      <h3 style={{ marginTop: 0 }}>
+        {t('pct.ai')}
+        {dirty && <span className="dirty-dot" title={t('common.unsaved')} />}
+      </h3>
       <div className="muted" style={{ marginBottom: 16 }}>{t('pct.aiIntro')}</div>
       {groups.map((g) => {
         const f = fieldFor(g.id);
         if (!f) return null;
         return (
           <Field key={g.id} label={g.label}>
-            <select value={f.value} onChange={(e) => f.set(e.target.value)}>
+            <select
+              value={f.value}
+              onChange={(e) => {
+                markDirty();
+                f.set(e.target.value);
+              }}
+            >
               <option value="">{t('pct.inheritDefault')}</option>
               {g.options.map((o) => (
                 <option key={o.id} value={o.id}>{o.label}</option>
@@ -1051,7 +1192,7 @@ function AiTab({ project, onSaved, onNotice, onError }: { project: Project; onSa
         );
       })}
       <button className="btn" type="submit" disabled={busy}>
-        {busy ? '…' : t('pct.saveAi')}
+        {busy ? t('common.saving') : t('pct.saveAi')}
       </button>
     </form>
   );
