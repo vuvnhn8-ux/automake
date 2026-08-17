@@ -200,7 +200,7 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
       },
       include: channelDetailInclude,
     });
-    return reply.code(201).send({ channel });
+    return reply.code(201).send({ channel: toPublicChannel(channel) });
   });
 
   // Test the connection/credentials of a channel and record the outcome.
