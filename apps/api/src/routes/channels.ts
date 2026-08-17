@@ -104,6 +104,10 @@ const channelDetailInclude = {
     take: 1,
     select: { id: true, status: true, publishedAt: true },
   },
+  schedules: {
+    orderBy: { createdAt: 'asc' as const },
+    select: { id: true, name: true, times: true, days: true, timezone: true, status: true, nextRunAt: true },
+  },
   _count: { select: { series: true, knowledge: true, contents: true } },
 } as const;
 
@@ -158,6 +162,10 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
         project: { select: { id: true, name: true } },
         publishingAccount: { select: { id: true, accountName: true, platform: true, status: true } },
         projectAssignments: { select: { projectId: true, project: { select: { id: true, name: true } }, enabled: true } },
+        schedules: {
+          orderBy: { createdAt: 'asc' as const },
+          select: { id: true, name: true, times: true, days: true, timezone: true, status: true, nextRunAt: true },
+        },
         _count: { select: { series: true, knowledge: true, contents: true } },
       },
     });

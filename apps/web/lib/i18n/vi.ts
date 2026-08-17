@@ -324,6 +324,7 @@ export const vi = {
   'pct.everyDay': 'mỗi ngày',
   'pct.next': 'tiếp theo {date}',
   'pct.resume': 'Tiếp tục',
+  'pct.allChannels': '— Tất cả kênh —',
   'pct.noSchedules': 'Chưa có lịch.',
 
   'pct.assignChannels': 'Kênh xuất bản',

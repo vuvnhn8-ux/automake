@@ -26,6 +26,7 @@ interface Channel {
   project: { id: string; name: string } | null;
   publishingAccount: { id: string; accountName: string; platform: string; status: string } | null;
   projectAssignments: ProjectAssignment[];
+  schedules: { id: string; name: string; times: string[]; days: string[]; timezone: string; status: string; nextRunAt: string | null }[];
   _count: { series: number; knowledge: number; contents: number };
 }
 
@@ -351,6 +352,7 @@ export default function ChannelsPage() {
                   <th>{t('channels.destination')}</th>
                   <th>{t('channels.assignedProjects')}</th>
                   <th>{t('channels.contents')}</th>
+                  <th>{t('channels.schedules')}</th>
                   <th>{t('channels.connection')}</th>
                   <th>{t('channels.status')}</th>
                   <th>{t('channels.actions')}</th>
@@ -381,6 +383,22 @@ export default function ChannelsPage() {
                     </td>
                     <td>{c._count.contents}</td>
                     <td>
+                      {c.schedules.length > 0 ? (
+                        <div>
+                          {c.schedules.map((s) => (
+                            <div key={s.id} style={{ fontSize: 12 }}>
+                              <span className={`badge ${s.status === 'ACTIVE' ? 'ok' : 'warn'}`} style={{ marginRight: 4 }}>
+                                {s.status === 'ACTIVE' ? '●' : '○'}
+                              </span>
+                              {s.name || s.times.join(', ')}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="muted" style={{ fontSize: 12 }}>—</span>
+                      )}
+                    </td>
+                    <td>
                       <span className={connectionClass(c.connectionStatus)}>
                         {c.connectionStatus ?? t('channels.neverTested')}
                       </span>
@@ -408,7 +426,7 @@ export default function ChannelsPage() {
                 ))}
                 {visible.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="muted">{t('channels.noChannels')}</td>
+                    <td colSpan={9} className="muted">{t('channels.noChannels')}</td>
                   </tr>
                 )}
               </tbody>

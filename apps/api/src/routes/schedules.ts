@@ -59,7 +59,10 @@ export async function scheduleRoutes(app: FastifyInstance): Promise<void> {
     const schedules = await prisma.schedule.findMany({
       where: { projectId },
       orderBy: { createdAt: 'desc' },
-      include: { topic: { select: { id: true, name: true } } },
+      include: {
+        topic: { select: { id: true, name: true } },
+        channel: { select: { id: true, name: true, platform: true } },
+      },
     });
     return { schedules };
   });

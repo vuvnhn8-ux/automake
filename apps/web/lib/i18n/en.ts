@@ -326,6 +326,7 @@ export const en: Dict = {
   'pct.everyDay': 'every day',
   'pct.next': 'next {date}',
   'pct.resume': 'Resume',
+  'pct.allChannels': '— All channels —',
   'pct.noSchedules': 'No schedules yet.',
 
   'pct.assignChannels': 'Publishing channels',

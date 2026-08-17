@@ -83,6 +83,8 @@ interface Schedule {
   status: string;
   nextRunAt?: string | null;
   topic?: { id: string; name: string } | null;
+  channelId?: string | null;
+  channel?: { id: string; name: string; platform: string } | null;
 }
 
 interface GlobalChannel {
@@ -795,11 +797,13 @@ function ScheduleTab({
   const { t } = useI18n();
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [topics, setTopics] = useState<{ id: string; name: string }[]>([]);
+  const [channels, setChannels] = useState<GlobalChannel[]>([]);
   const [name, setName] = useState('');
   const [times, setTimes] = useState<string[]>(['08:00']);
   const [days, setDays] = useState<string[]>([]);
   const [timezone, setTimezone] = useState(projectTimezone || 'Asia/Tokyo');
   const [topicId, setTopicId] = useState('');
+  const [channelId, setChannelId] = useState('');
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(() => {
@@ -808,6 +812,9 @@ function ScheduleTab({
       .catch((e) => onError(e.message));
     api<{ topics: Topic[] }>(`/api/projects/${projectId}/topics`)
       .then((d) => setTopics(d.topics))
+      .catch(() => undefined);
+    api<{ channels: GlobalChannel[] }>('/api/channels')
+      .then((d) => setChannels(d.channels))
       .catch(() => undefined);
   }, [projectId, onError]);
 
@@ -832,11 +839,13 @@ function ScheduleTab({
           days,
           timezone,
           topicId: topicId || undefined,
+          channelId: channelId || undefined,
         },
       });
       setName('');
       setTimes(['08:00']);
       setDays([]);
+      setChannelId('');
       onNotice(t('pct.scheduleCreated'));
       load();
     } catch (err) {
@@ -896,6 +905,14 @@ function ScheduleTab({
             ))}
           </select>
         </Field>
+        <Field label={t('pct.channel')}>
+          <select value={channelId} onChange={(e) => setChannelId(e.target.value)}>
+            <option value="">{t('pct.allChannels')}</option>
+            {channels.filter((ch) => ch.isActive).map((ch) => (
+              <option key={ch.id} value={ch.id}>{ch.name} ({ch.platform})</option>
+            ))}
+          </select>
+        </Field>
         <Field label={t('pct.days')}>
           <div className="wrap">
             {DAYS.map((d) => (
@@ -925,6 +942,7 @@ function ScheduleTab({
               <div className="muted" style={{ fontSize: 12 }}>
                 {s.times.join(', ')} · {s.days.length ? s.days.join(', ') : t('pct.everyDay')} · {s.timezone}
                 {s.topic && ` · ${s.topic.name}`}
+                {s.channel && ` · ${s.channel.name}`}
                 {s.nextRunAt ? ` · ${t('pct.next', { date: new Date(s.nextRunAt).toLocaleString() })}` : ''}
               </div>
             </div>
