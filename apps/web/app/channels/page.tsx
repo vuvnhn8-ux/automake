@@ -29,20 +29,6 @@ interface Channel {
   _count: { series: number; knowledge: number; contents: number };
 }
 
-interface Account {
-  id: string;
-  accountName: string;
-  platform: string;
-  status: string;
-}
-
-interface FacebookPage {
-  id: string;
-  pageId: string;
-  pageName: string;
-  status: string;
-}
-
 const PLATFORMS = ['FACEBOOK', 'YOUTUBE', 'TIKTOK', 'INSTAGRAM', 'X', 'THREADS'];
 
 const PLATFORM_ICON: Record<string, string> = {
@@ -97,8 +83,42 @@ function TestButton({ channel, onDone }: { channel: Channel; onDone: () => void 
 }
 
 // ---------------------------------------------------------------------------
-// Create-channel wizard (platform -> destination -> name -> save)
+// Create-channel wizard — name + platform + platform credentials + settings
 // ---------------------------------------------------------------------------
+
+const CREDENTIAL_FIELDS: Record<string, { key: string; label: string; type?: string }[]> = {
+  FACEBOOK: [
+    { key: 'appId', label: 'App ID' },
+    { key: 'appSecret', label: 'App Secret', type: 'password' },
+    { key: 'pageName', label: 'Tên Page' },
+    { key: 'pageAccessToken', label: 'Page Access Token', type: 'password' },
+  ],
+  YOUTUBE: [
+    { key: 'apiKey', label: 'API Key', type: 'password' },
+    { key: 'clientId', label: 'Client ID' },
+    { key: 'clientSecret', label: 'Client Secret', type: 'password' },
+    { key: 'refreshToken', label: 'Refresh Token', type: 'password' },
+    { key: 'channelId', label: 'Channel ID' },
+  ],
+  TIKTOK: [
+    { key: 'clientKey', label: 'Client Key' },
+    { key: 'clientSecret', label: 'Client Secret', type: 'password' },
+    { key: 'accessToken', label: 'Access Token', type: 'password' },
+  ],
+  INSTAGRAM: [
+    { key: 'accessToken', label: 'Access Token', type: 'password' },
+    { key: 'businessAccountId', label: 'Business Account ID' },
+  ],
+  X: [
+    { key: 'consumerKey', label: 'Consumer Key', type: 'password' },
+    { key: 'consumerSecret', label: 'Consumer Secret', type: 'password' },
+    { key: 'accessToken', label: 'Access Token', type: 'password' },
+    { key: 'accessTokenSecret', label: 'Access Token Secret', type: 'password' },
+  ],
+  THREADS: [
+    { key: 'accessToken', label: 'Access Token', type: 'password' },
+  ],
+};
 
 function CreateChannelCard({ onDone }: { onDone: () => void }) {
   const { t } = useI18n();
@@ -108,26 +128,16 @@ function CreateChannelCard({ onDone }: { onDone: () => void }) {
   const [dailyVideoTarget, setDailyVideoTarget] = useState(1);
   const [autoGenerationEnabled, setAutoGenerationEnabled] = useState(false);
   const [distributionMode, setDistributionMode] = useState('SAME_CONTENT');
-  const [facebookPageId, setFacebookPageId] = useState('');
-  const [publishingAccountId, setPublishingAccountId] = useState('');
-  const [pages, setPages] = useState<FacebookPage[]>([]);
-  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [credFields, setCredFields] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    api<{ pages: FacebookPage[] }>('/api/facebook/pages')
-      .then((d) => setPages(d.pages))
-      .catch(() => setPages([]));
-    api<{ accounts: Account[] }>('/api/accounts')
-      .then((d) => setAccounts(d.accounts))
-      .catch(() => setAccounts([]));
-  }, []);
+  const fields = CREDENTIAL_FIELDS[platform] ?? [];
 
-  const matchingAccounts = useMemo(
-    () => accounts.filter((a) => a.platform === platform),
-    [accounts, platform],
-  );
+  const handlePlatform = (p: string) => {
+    setPlatform(p);
+    setCredFields({});
+  };
 
   const create = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -135,6 +145,7 @@ function CreateChannelCard({ onDone }: { onDone: () => void }) {
     setBusy(true);
     setError('');
     try {
+      const hasCreds = Object.values(credFields).some((v) => v.trim().length > 0);
       await api('/api/channels', {
         method: 'POST',
         body: {
@@ -144,8 +155,7 @@ function CreateChannelCard({ onDone }: { onDone: () => void }) {
           dailyVideoTarget,
           autoGenerationEnabled,
           distributionMode,
-          ...(facebookPageId ? { facebookPageId } : {}),
-          ...(publishingAccountId ? { publishingAccountId } : {}),
+          ...(hasCreds ? { credentials: credFields } : {}),
         },
       });
       onDone();
@@ -169,7 +179,7 @@ function CreateChannelCard({ onDone }: { onDone: () => void }) {
               key={p}
               type="button"
               className={`btn small ${platform === p ? '' : 'secondary'}`}
-              onClick={() => setPlatform(p)}
+              onClick={() => handlePlatform(p)}
             >
               <span className="badge accent" style={{ marginRight: 6 }}>{PLATFORM_ICON[p]}</span>
               {p}
@@ -183,25 +193,31 @@ function CreateChannelCard({ onDone }: { onDone: () => void }) {
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('channels.channelNamePlaceholder')} required />
       </div>
 
-      <div className="field">
-        <label>{t('channels.linkDestination')}</label>
-        <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>{t('channels.destinationHint')}</div>
-        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-          <select value={publishingAccountId} onChange={(e) => setPublishingAccountId(e.target.value)} style={{ flex: 1, minWidth: 200 }}>
-            <option value="">{t('channels.publishingAccounts')}</option>
-            {matchingAccounts.map((a) => (
-              <option key={a.id} value={a.id}>{a.accountName}</option>
-            ))}
-          </select>
-          {platform === 'FACEBOOK' && (
-            <select value={facebookPageId} onChange={(e) => setFacebookPageId(e.target.value)} style={{ flex: 1, minWidth: 200 }}>
-              <option value="">{t('channels.facebookPages')}</option>
-              {pages.map((p) => (
-                <option key={p.id} value={p.id}>{p.pageName}</option>
-              ))}
-            </select>
-          )}
+      {fields.length > 0 && (
+        <div className="card" style={{ background: 'var(--bg-subtle, #f8f9fa)', marginBottom: 16 }}>
+          <div style={{ fontWeight: 600, marginBottom: 12 }}>
+            Thông tin API / Thông tin xác thực — {platform}
+          </div>
+          {fields.map((f) => (
+            <div className="field" key={f.key}>
+              <label>{f.label}</label>
+              <input
+                type={f.type ?? 'text'}
+                value={credFields[f.key] ?? ''}
+                onChange={(e) => setCredFields((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                placeholder={`Nhập ${f.label.toLowerCase()}...`}
+              />
+            </div>
+          ))}
+          <div className="muted" style={{ fontSize: 12 }}>
+            Thông tin được mã hóa AES-256-GCM, không lưu dạng plaintext.
+          </div>
         </div>
+      )}
+
+      <div className="field">
+        <label>{t('channels.description')}</label>
+        <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder={t('channels.descriptionPlaceholder')} />
       </div>
 
       <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>

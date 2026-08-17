@@ -344,6 +344,7 @@ model PublishingChannel {
   distributionMode      ChannelDistributionMode @default(SAME_CONTENT)
   facebookPageId        String?         @db.Uuid
   publishingAccountId   String?         @db.Uuid
+  credentials           String?         @db.Text
   createdAt             DateTime        @default(now())
   updatedAt             DateTime        @updatedAt
 

@@ -16,6 +16,7 @@ export const CreateChannelSchema = z.object({
   distributionMode: z.enum(['SAME_CONTENT', 'CHANNEL_VARIANT']).default('SAME_CONTENT'),
   facebookPageId: z.string().uuid().nullable().optional(),
   publishingAccountId: z.string().uuid().nullable().optional(),
+  credentials: z.record(z.string(), z.string()).optional(),
 });
 
 export const UpdateChannelSchema = CreateChannelSchema.partial();

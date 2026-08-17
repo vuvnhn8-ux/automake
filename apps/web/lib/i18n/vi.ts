@@ -499,6 +499,7 @@ export const vi = {
   'channels.channelName': 'Tên kênh',
   'channels.channelNamePlaceholder': 'VD: Kênh nấu ăn của tôi',
   'channels.descriptionPlaceholder': 'Mô tả ngắn (tùy chọn)',
+  'channels.description': 'Mô tả',
   'channels.linkDestination': 'Liên kết điểm đến',
   'channels.destinationHint': 'Tùy chọn — liên kết tài khoản xuất bản hoặc trang Facebook ngay bây giờ, hoặc kết nối sau.',
   'channels.facebookPages': 'Trang Facebook',

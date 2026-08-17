@@ -22,6 +22,7 @@ import {
   channelOwnershipWhere,
   toPublicChannel,
 } from '../lib/channels.js';
+import { SecretCipher } from '@avf/config';
 
 const UpsertProfileSchema = z.object({
   description: z.string().max(5000).optional(),
@@ -160,14 +161,14 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
         _count: { select: { series: true, knowledge: true, contents: true } },
       },
     });
-    return { channels };
+    return { channels: channels.map(toPublicChannel) };
   });
 
   // Create a channel in the global registry. Projects are never required.
   app.post('/channels', async (request, reply) => {
     const auth = getAuthUser(request);
     const body = parse(CreateChannelSchema, request.body);
-    const { facebookPageId, publishingAccountId, distributionMode, ...rest } = body;
+    const { facebookPageId, publishingAccountId, distributionMode, credentials, ...rest } = body;
     if (facebookPageId) {
       const page = await prisma.facebookPage.findFirst({ where: { id: facebookPageId, userId: auth.id } });
       if (!page) {
@@ -182,6 +183,11 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(404).send({ error: 'not_found', message: 'Publishing account not found' });
       }
     }
+    let encryptedCredentials: string | null = null;
+    if (credentials && Object.keys(credentials).length > 0) {
+      const cipher = new SecretCipher();
+      encryptedCredentials = cipher.encrypt(JSON.stringify(credentials));
+    }
     const channel = await prisma.publishingChannel.create({
       data: {
         userId: auth.id,
@@ -190,6 +196,7 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
         ...rest,
         ...(facebookPageId ? { facebookPageId } : {}),
         ...(publishingAccountId ? { publishingAccountId } : {}),
+        ...(encryptedCredentials ? { credentials: encryptedCredentials } : {}),
       },
       include: channelDetailInclude,
     });
@@ -202,6 +209,7 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
     const id = parseId((request.params as { id: string }).id);
     const channel = await getChannel(auth.id, id);
     const cipher = new FacebookTokenCipher();
+    const secretCipher = new SecretCipher();
 
     try {
       if (channel.facebookPage?.accessTokenEnc) {
@@ -215,6 +223,25 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
           data: { connectionStatus: status, tokenStatus: found ? 'VALID' : 'NOT_FOUND', lastCheckedAt: new Date() },
         });
         return { ok: found, status, message: found ? 'Connection OK' : 'Page not found for this token' };
+      }
+
+      if (channel.credentials) {
+        try {
+          const creds = JSON.parse(secretCipher.decrypt(channel.credentials)) as Record<string, string>;
+          const hasAllKeys = Object.values(creds).every((v) => typeof v === 'string' && v.length > 0);
+          const status = hasAllKeys ? 'CONNECTED' : 'ERROR';
+          await prisma.publishingChannel.update({
+            where: { id },
+            data: { connectionStatus: status, tokenStatus: hasAllKeys ? 'VALID' : 'INCOMPLETE', lastCheckedAt: new Date() },
+          });
+          return { ok: hasAllKeys, status, message: hasAllKeys ? 'Credentials present and valid format' : 'Some credential fields are empty' };
+        } catch {
+          await prisma.publishingChannel.update({
+            where: { id },
+            data: { connectionStatus: 'ERROR', tokenStatus: 'DECRYPT_FAILED', lastCheckedAt: new Date() },
+          });
+          return { ok: false, status: 'ERROR', message: 'Could not decrypt channel credentials' };
+        }
       }
 
       if (channel.publishingAccount?.credentials) {
@@ -305,9 +332,13 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(404).send({ error: 'not_found', message: 'Channel not found' });
     }
     // Never expose encrypted credentials — only a masked preview.
+    const { credentials: _rawCreds, ...channelSafe } = channel;
+    const hasCreds = Boolean(_rawCreds);
     return {
       channel: {
-        ...channel,
+        ...channelSafe,
+        hasCredentials: hasCreds,
+        credentialsMask: hasCreds ? '••••••••' : '',
         facebookPage: channel.facebookPage
           ? toPublicChannel(channel.facebookPage)
           : null,

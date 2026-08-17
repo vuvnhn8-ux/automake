@@ -40,6 +40,17 @@ describe('global channel registry — create schema', () => {
     expect(CreateChannelSchema.safeParse({ name: 'x', platform: 'SNAPCHAT' }).success).toBe(false);
   });
 
+  it('accepts credentials as a string-keyed record', () => {
+    const result = CreateChannelSchema.safeParse({
+      name: 'FB Test',
+      platform: 'FACEBOOK',
+      credentials: { appId: '123', appSecret: 'secret', pageName: 'My Page', pageAccessToken: 'tok' },
+    });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.credentials).toEqual({ appId: '123', appSecret: 'secret', pageName: 'My Page', pageAccessToken: 'tok' });
+  });
+
   it('allows partial updates (UpdateChannelSchema)', () => {
     expect(UpdateChannelSchema.safeParse({}).success).toBe(true);
     expect(UpdateChannelSchema.safeParse({ name: 'renamed' }).success).toBe(true);

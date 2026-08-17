@@ -501,6 +501,7 @@ export const en: Dict = {
   'channels.channelName': 'Channel name',
   'channels.channelNamePlaceholder': 'e.g. My cooking channel',
   'channels.descriptionPlaceholder': 'Short description (optional)',
+  'channels.description': 'Description',
   'channels.linkDestination': 'Link destination',
   'channels.destinationHint': 'Optional — link a publishing account or Facebook page now, or connect later.',
   'channels.facebookPages': 'Facebook pages',
