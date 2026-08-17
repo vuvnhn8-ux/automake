@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import Shell from '@/components/Shell';
 import { api, useAuth } from '@/lib/auth';
@@ -128,6 +128,14 @@ function SettingRow({ setting, onSave }: { setting: Setting; onSave: (s: Setting
   const [value, setValue] = useState(() => JSON.stringify(setting.value));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const initialRef = useRef(setting.value);
+
+  useEffect(() => {
+    if (setting.value !== initialRef.current) {
+      initialRef.current = setting.value;
+      setValue(JSON.stringify(setting.value));
+    }
+  }, [setting.value]);
 
   return (
     <tr>

@@ -276,7 +276,7 @@ function ProviderRow({
     setBusy(true);
     setError('');
     try {
-      const body: Record<string, unknown> = { group: group.id, provider: opt.id, enabled };
+      const body: Record<string, unknown> = { group: group.id, provider: opt.id };
       if (apiKey.trim()) body.apiKey = apiKey.trim();
       if (model.trim()) body.model = model.trim();
       await api('/api/providers', { method: 'PUT', body });
