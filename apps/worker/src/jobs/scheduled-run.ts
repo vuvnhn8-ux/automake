@@ -23,7 +23,7 @@ export async function rearmSchedule(
   await ctx.queue.add(
     'scheduled-run',
     { scheduleId: schedule.id, projectId: schedule.projectId, runAt: next.toISOString() },
-    { delayMs, jobId: `scheduled-run:${schedule.id}:${next.toISOString()}` },
+    { delayMs, jobId: `scheduled-run-${schedule.id}-${next.toISOString().replace(/:/g, '-')}` },
   );
 }
 

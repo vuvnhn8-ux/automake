@@ -21,7 +21,7 @@ const CreateScheduleSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   times: z.array(z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/)).min(1).max(10),
   days: z.array(z.enum(DAYS)).max(7).default([]),
-  timezone: z.string().max(64).refine(validTimezone, 'Invalid IANA timezone').default('Asia/Tokyo'),
+  timezone: z.string().max(64).refine(validTimezone, 'Invalid IANA timezone').default('Asia/Ho_Chi_Minh'),
   topicId: z.string().uuid().optional(),
   campaignId: z.string().uuid().optional(),
   channelId: z.string().uuid().optional(),
@@ -46,7 +46,7 @@ export async function scheduleRunDelay(
     scheduleId,
     projectId,
     runAt: next.toISOString(),
-  }, { delayMs, jobId: `scheduled-run:${scheduleId}:${next.toISOString()}` });
+  }, { delayMs, jobId: `scheduled-run-${scheduleId}-${next.toISOString().replace(/:/g, '-')}` });
 }
 
 export async function scheduleRoutes(app: FastifyInstance): Promise<void> {
