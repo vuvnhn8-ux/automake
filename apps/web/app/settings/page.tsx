@@ -6,6 +6,36 @@ import Shell from '@/components/Shell';
 import { api, useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
 
+const TIMEZONE_OPTIONS = [
+  'Asia/Ho_Chi_Minh',
+  'Asia/Bangkok',
+  'Asia/Jakarta',
+  'Asia/Manila',
+  'Asia/Kuala_Lumpur',
+  'Asia/Singapore',
+  'Asia/Yangon',
+  'Asia/Phnom_Penh',
+  'Asia/Vientiane',
+  'Asia/Shanghai',
+  'Asia/Hong_Kong',
+  'Asia/Taipei',
+  'Asia/Seoul',
+  'Asia/Tokyo',
+  'Asia/Kolkata',
+  'Asia/Dubai',
+  'Europe/Moscow',
+  'Europe/London',
+  'Europe/Paris',
+  'Europe/Berlin',
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Los_Angeles',
+  'Pacific/Auckland',
+  'Australia/Sydney',
+  'UTC',
+];
+
 interface Setting {
   key: string;
   value: unknown;
@@ -394,14 +424,16 @@ function TelegramCard({ onChanged }: { onChanged: (msg: string) => void }) {
         </div>
         <div className="field">
           <label htmlFor="tg-tz">{t('settings.telegramTimezone')}</label>
-          <input
+          <select
             id="tg-tz"
-            type="text"
-            placeholder="Asia/Ho_Chi_Minh"
             value={timezone}
             onChange={(e) => setTimezone(e.target.value)}
             disabled={!isAdmin}
-          />
+          >
+            {TIMEZONE_OPTIONS.map((tz) => (
+              <option key={tz} value={tz}>{tz}</option>
+            ))}
+          </select>
         </div>
         <div className="field" style={{ gridColumn: '1 / -1' }}>
           <label>

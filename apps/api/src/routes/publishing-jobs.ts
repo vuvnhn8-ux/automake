@@ -141,7 +141,7 @@ export async function publishingJobRoutes(app: FastifyInstance): Promise<void> {
 
 function startOfDay(): Date {
   const d = new Date();
-  d.setHours(0, 0, 0, 0);
+  d.setUTCHours(0, 0, 0, 0);
   return d;
 }
 

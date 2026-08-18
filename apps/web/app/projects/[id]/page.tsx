@@ -109,6 +109,36 @@ interface ProviderGroup {
 }
 
 const DAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
+
+const TIMEZONE_OPTIONS = [
+  'Asia/Ho_Chi_Minh',
+  'Asia/Bangkok',
+  'Asia/Jakarta',
+  'Asia/Manila',
+  'Asia/Kuala_Lumpur',
+  'Asia/Singapore',
+  'Asia/Yangon',
+  'Asia/Phnom_Penh',
+  'Asia/Vientiane',
+  'Asia/Shanghai',
+  'Asia/Hong_Kong',
+  'Asia/Taipei',
+  'Asia/Seoul',
+  'Asia/Tokyo',
+  'Asia/Kolkata',
+  'Asia/Dubai',
+  'Europe/Moscow',
+  'Europe/London',
+  'Europe/Paris',
+  'Europe/Berlin',
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Los_Angeles',
+  'Pacific/Auckland',
+  'Australia/Sydney',
+  'UTC',
+];
 const TABS = ['general', 'content', 'video', 'topics', 'schedule', 'channels', 'ai'] as const;
 type Tab = (typeof TABS)[number];
 
@@ -338,7 +368,11 @@ function GeneralTab({ project, onSaved, onNotice, onError }: { project: Project;
           <input value={language} onChange={(e) => touch(setLanguage)(e.target.value)} placeholder="vi-VN" />
         </Field>
         <Field label={t('pct.timezone')}>
-          <input value={timezone} onChange={(e) => touch(setTimezone)(e.target.value)} placeholder="Asia/Tokyo" />
+          <select value={timezone} onChange={(e) => touch(setTimezone)(e.target.value)}>
+            {TIMEZONE_OPTIONS.map((tz) => (
+              <option key={tz} value={tz}>{tz}</option>
+            ))}
+          </select>
         </Field>
         <Field label={t('pct.publishingMode')}>
           <select value={publishingMode} onChange={(e) => touch(setPublishingMode)(e.target.value)}>
@@ -801,7 +835,7 @@ function ScheduleTab({
   const [name, setName] = useState('');
   const [times, setTimes] = useState<string[]>(['08:00']);
   const [days, setDays] = useState<string[]>([]);
-  const [timezone, setTimezone] = useState(projectTimezone || 'Asia/Tokyo');
+  const [timezone, setTimezone] = useState(projectTimezone || 'Asia/Ho_Chi_Minh');
   const [topicId, setTopicId] = useState('');
   const [channelId, setChannelId] = useState('');
   const [busy, setBusy] = useState(false);
@@ -895,7 +929,11 @@ function ScheduleTab({
           </div>
         </Field>
         <Field label={t('pct.timezone')}>
-          <input value={timezone} onChange={(e) => setTimezone(e.target.value)} placeholder="Asia/Tokyo" />
+          <select value={timezone} onChange={(e) => setTimezone(e.target.value)}>
+            {TIMEZONE_OPTIONS.map((tz) => (
+              <option key={tz} value={tz}>{tz}</option>
+            ))}
+          </select>
         </Field>
         <Field label={t('pct.topic')}>
           <select value={topicId} onChange={(e) => setTopicId(e.target.value)}>

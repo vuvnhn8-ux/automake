@@ -320,7 +320,6 @@ function ProviderRow({
     }
   };
 
-  const canTest = group.id === 'AI_TEXT' || group.id === 'RESEARCH';
   const usage = opt.usage;
   const hb = usage ? healthBadge(usage.health) : null;
 
@@ -403,7 +402,7 @@ function ProviderRow({
             <button className="btn small" type="submit" disabled={busy}>
               {busy ? t('common.saving') : t('providers.save')}
             </button>
-            {canTest && (
+            {admin && (
               <button className="btn small secondary" type="button" onClick={() => void test()} disabled={busy}>
                 {t('providers.test')}
               </button>
@@ -422,11 +421,9 @@ function ProviderRow({
         )}
         {!admin && (
           <span className="muted">
-            {canTest && (
-              <button className="btn small secondary" type="button" onClick={() => void test()} disabled={busy}>
-                {t('providers.test')}
-              </button>
-            )}
+            <button className="btn small secondary" type="button" onClick={() => void test()} disabled={busy}>
+              {t('providers.test')}
+            </button>
           </span>
         )}
         {error && <div className="error">{error}</div>}

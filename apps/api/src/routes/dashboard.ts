@@ -28,7 +28,7 @@ export async function dashboardRoutes(app: FastifyInstance): Promise<void> {
     );
 
     const start = new Date();
-    start.setHours(0, 0, 0, 0);
+    start.setUTCHours(0, 0, 0, 0);
 
     const [publishedToday, queued, processing, failedJobs, workers] = await Promise.all([
       prisma.publishingJob.count({

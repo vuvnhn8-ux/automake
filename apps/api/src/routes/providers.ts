@@ -27,6 +27,13 @@ import {
   type AICompletionRequest,
   type AIProvider,
 } from '@avf/ai';
+import {
+  OpenAIImageProvider,
+  OpenAIVoiceProvider,
+  GoogleVoiceProvider,
+  ElevenLabsVoiceProvider,
+  MockVoiceProvider,
+} from '@avf/media';
 import { parse } from '../lib/validate.js';
 import { getAuthUser } from '../plugins/auth.js';
 
@@ -268,9 +275,79 @@ export async function providersRoutes(app: FastifyInstance): Promise<void> {
         await provider.research({ topic: 'test', maxSources: 1 });
         return reply.code(200).send({ ok: true, provider: 'TAVILY' });
       }
+      if (body.group === 'IMAGE') {
+        if (body.provider === 'OPENAI' || body.provider === 'GEMINI') {
+          const provider = new OpenAIImageProvider(model || undefined);
+          const result = await provider.generateImage({
+            prompt: 'A simple test image of a blue circle on white background',
+            size: '256x256',
+          });
+          return reply.code(200).send({ ok: true, provider: result.provider, model: result.model });
+        }
+        if (body.provider === 'STABILITY' || body.provider === 'FAL') {
+          const testKey = apiKey || envValue('STABILITY_API_KEY') || envValue('FAL_API_KEY') || '';
+          if (!testKey) {
+            return reply.code(200).send({ ok: false, message: `No API key configured for ${body.provider}` });
+          }
+          return reply.code(200).send({ ok: true, provider: body.provider, message: `${body.provider} key is configured` });
+        }
+        if (body.provider === 'MOCK') {
+          return reply.code(200).send({ ok: true, provider: 'MOCK' });
+        }
+      }
+      if (body.group === 'VOICE') {
+        if (body.provider === 'OPENAI') {
+          const provider = new OpenAIVoiceProvider(model || undefined);
+          const result = await provider.generateVoice({
+            text: 'Hello, this is a test.',
+            language: 'en-US',
+          });
+          return reply.code(200).send({ ok: true, provider: result.provider, model: result.model });
+        }
+        if (body.provider === 'GOOGLE') {
+          const provider = new GoogleVoiceProvider();
+          const result = await provider.generateVoice({
+            text: 'Xin chào, đây là bài kiểm tra.',
+            language: 'vi-VN',
+          });
+          return reply.code(200).send({ ok: true, provider: result.provider, model: result.model });
+        }
+        if (body.provider === 'ELEVENLABS') {
+          const provider = new ElevenLabsVoiceProvider();
+          const result = await provider.generateVoice({
+            text: 'Hello, this is a test.',
+            language: 'en-US',
+          });
+          return reply.code(200).send({ ok: true, provider: result.provider, model: result.model });
+        }
+        if (body.provider === 'MOCK') {
+          const provider = new MockVoiceProvider();
+          const result = await provider.generateVoice({ text: 'test', language: 'en-US' });
+          return reply.code(200).send({ ok: true, provider: result.provider, model: result.model });
+        }
+      }
+      if (body.group === 'VIDEO') {
+        if (body.provider === 'VEO' || body.provider === 'KLING' || body.provider === 'RUNWAY' || body.provider === 'PIXVERSE' || body.provider === 'AGNES') {
+          const envKeys: Record<string, string> = {
+            VEO: 'GOOGLE_API_KEY',
+            KLING: 'KLING_API_KEY',
+            RUNWAY: 'RUNWAY_API_KEY',
+            PIXVERSE: 'PIXVERSE_API_KEY',
+            AGNES: 'AGNES_API_KEY',
+          };
+          const testKey = apiKey || envValue(envKeys[body.provider] ?? '') || '';
+          if (!testKey) {
+            return reply.code(200).send({ ok: false, message: `No API key configured for ${body.provider}` });
+          }
+          return reply.code(200).send({ ok: true, provider: body.provider, message: `${body.provider} key is configured` });
+        }
+        if (body.provider === 'MOCK') {
+          return reply.code(200).send({ ok: true, provider: 'MOCK' });
+        }
+      }
       return reply
         .code(400)
-        .send({ ok: false, message: 'Connection test is not supported for this provider yet' });
+        .send({ ok: false, message: `Connection test is not supported for ${body.provider}` });
     } catch (err) {
       return reply.code(200).send({ ok: false, message: errorMessage(err) });
     }
