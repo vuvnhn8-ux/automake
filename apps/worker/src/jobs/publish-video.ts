@@ -2,6 +2,7 @@ import { mkdir, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { prisma } from '@avf/database';
 import { FacebookProvider, createPlatformProvider, type SocialProvider } from '@avf/social';
+import { SecretCipher } from '@avf/config';
 import type { WorkerContext } from '../context.js';
 import { recordLog, failPublishingJob, shortMessage } from '../lib/status.js';
 import { ensureTempRoot } from '../lib/temp.js';
@@ -91,6 +92,23 @@ export async function handlePublishVideo(
       token = ctx.cipher.decrypt(account.credentials);
       destinationName = account.accountName;
       platformName = account.platform;
+    } else if (channel?.credentials) {
+      const secretCipher = new SecretCipher();
+      const creds = JSON.parse(secretCipher.decrypt(channel.credentials)) as Record<string, string>;
+      provider = new FacebookProvider();
+      if (channel.platform === 'FACEBOOK') {
+        pageId = creds.pageId ?? '';
+        token = creds.pageAccessToken ?? '';
+        destinationName = creds.pageName ?? channel.name;
+        platformName = 'FACEBOOK';
+      } else {
+        token = creds.accessToken ?? Object.values(creds).find((v) => typeof v === 'string' && v.length > 50) ?? '';
+        pageId = creds.channelId ?? creds.externalAccountId ?? channel.id;
+        destinationName = creds.channelName ?? creds.pageName ?? channel.name;
+        platformName = channel.platform;
+        provider = createPlatformProvider(channel.platform);
+      }
+      if (!token) throw new Error('Channel credentials are missing a valid access token');
     } else {
       throw new Error(
         'Publishing destination is not configured (no Facebook page token and no publishing account)',
