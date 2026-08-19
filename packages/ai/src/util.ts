@@ -167,7 +167,7 @@ function describeZodSchema(schema: ZodType<unknown>): string {
 }
 
 type ZodTypeAny = {
-  _def?: { typeName?: string; innerType?: ZodTypeAny; options?: unknown; element?: ZodTypeAny; shape?: () => Record<string, ZodTypeAny>; checks?: { min?: number; max?: number }[] };
+  _def?: { typeName?: string; innerType?: ZodTypeAny; options?: unknown; type?: ZodTypeAny; element?: ZodTypeAny; shape?: () => Record<string, ZodTypeAny>; checks?: { min?: number; max?: number }[] };
 };
 
 /**
@@ -184,7 +184,7 @@ function zodToJsonSchema(schema: ZodTypeAny): Record<string, unknown> {
     case 'ZodBoolean':
       return { type: 'boolean' };
     case 'ZodArray':
-      return { type: 'array', items: zodToJsonSchema(schema._def?.element as ZodTypeAny) };
+      return { type: 'array', items: zodToJsonSchema((schema._def?.type ?? schema._def?.element) as ZodTypeAny) };
     case 'ZodEnum': {
       const options = (schema._def?.options as unknown[]) ?? [];
       return { type: 'string', enum: options };
