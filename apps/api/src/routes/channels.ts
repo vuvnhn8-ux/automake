@@ -377,10 +377,20 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(404).send({ error: 'not_found', message: 'Publishing account not found' });
       }
     }
+    let encryptedCredentials: string | undefined;
+    if (body.credentials !== undefined) {
+      if (body.credentials && Object.keys(body.credentials).length > 0) {
+        const cipher = new SecretCipher();
+        encryptedCredentials = cipher.encrypt(JSON.stringify(body.credentials));
+      } else {
+        encryptedCredentials = undefined;
+      }
+    }
     const data: Prisma.PublishingChannelUpdateInput = {
       ...rest,
       ...(body.facebookPageId !== undefined ? { facebookPage: facebookPageId ? { connect: { id: facebookPageId } } : { disconnect: true } } : {}),
       ...(body.publishingAccountId !== undefined ? { publishingAccount: publishingAccountId ? { connect: { id: publishingAccountId } } : { disconnect: true } } : {}),
+      ...(encryptedCredentials !== undefined ? { credentials: encryptedCredentials } : {}),
     };
     const channel = await prisma.publishingChannel.update({ where: { id }, data, include: channelDetailInclude });
     return { channel };

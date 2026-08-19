@@ -520,6 +520,7 @@ export const en: Dict = {
   'channels.created': 'Channel created',
   'channels.credsTitle': 'API credentials — {platform}',
   'channels.credsEncrypted': 'Credentials are encrypted with AES-256-GCM and never stored as plaintext.',
+  'channels.credsEditHint': 'Leave blank to keep current credentials.',
   'channels.credPlaceholder': 'Enter {field}…',
   'channels.cred.appId': 'App ID',
   'channels.cred.appSecret': 'App Secret',

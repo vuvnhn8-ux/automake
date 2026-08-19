@@ -311,6 +311,55 @@ export default function ChannelDetailPage() {
 // Edit card
 // ---------------------------------------------------------------------------
 
+type CredKey =
+  | 'appId'
+  | 'appSecret'
+  | 'pageName'
+  | 'pageAccessToken'
+  | 'apiKey'
+  | 'clientId'
+  | 'clientSecret'
+  | 'refreshToken'
+  | 'channelId'
+  | 'clientKey'
+  | 'accessToken'
+  | 'businessAccountId'
+  | 'consumerKey'
+  | 'consumerSecret'
+  | 'accessTokenSecret';
+
+const CREDENTIAL_FIELDS: Record<string, { key: CredKey; type?: string }[]> = {
+  FACEBOOK: [
+    { key: 'appId' },
+    { key: 'appSecret', type: 'password' },
+    { key: 'pageName' },
+    { key: 'pageAccessToken', type: 'password' },
+  ],
+  YOUTUBE: [
+    { key: 'apiKey', type: 'password' },
+    { key: 'clientId' },
+    { key: 'clientSecret', type: 'password' },
+    { key: 'refreshToken', type: 'password' },
+    { key: 'channelId' },
+  ],
+  TIKTOK: [
+    { key: 'clientKey' },
+    { key: 'clientSecret', type: 'password' },
+    { key: 'accessToken', type: 'password' },
+  ],
+  INSTAGRAM: [
+    { key: 'accessToken', type: 'password' },
+    { key: 'businessAccountId' },
+  ],
+  X: [
+    { key: 'consumerKey', type: 'password' },
+    { key: 'consumerSecret', type: 'password' },
+    { key: 'accessToken', type: 'password' },
+    { key: 'accessTokenSecret', type: 'password' },
+  ],
+  THREADS: [{ key: 'accessToken', type: 'password' }],
+};
+
 function EditCard({ channel, onCancel, onSaved }: { channel: Channel; onCancel: () => void; onSaved: () => void }) {
   const { t } = useI18n();
   const [name, setName] = useState(channel.name);
@@ -321,22 +370,30 @@ function EditCard({ channel, onCancel, onSaved }: { channel: Channel; onCancel: 
   const [isActive, setIsActive] = useState(channel.isActive);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [creds, setCreds] = useState<Record<string, string>>({});
+
+  const credFields = CREDENTIAL_FIELDS[channel.platform] ?? [];
+  const hasCredChanges = credFields.some((f) => creds[f.key]?.trim());
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
     setError('');
     try {
+      const body: Record<string, unknown> = {
+        name,
+        description: description.trim() || undefined,
+        dailyVideoTarget,
+        autoGenerationEnabled,
+        distributionMode,
+        isActive,
+      };
+      if (hasCredChanges) {
+        body.credentials = creds;
+      }
       await api(`/api/channels/${channel.id}`, {
         method: 'PATCH',
-        body: {
-          name,
-          description: description.trim() || undefined,
-          dailyVideoTarget,
-          autoGenerationEnabled,
-          distributionMode,
-          isActive,
-        },
+        body,
       });
       onSaved();
     } catch (err) {
@@ -374,6 +431,25 @@ function EditCard({ channel, onCancel, onSaved }: { channel: Channel; onCancel: 
         <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
         <span>{t('channels.statusActive')}</span>
       </label>
+
+      {credFields.length > 0 && (
+        <div style={{ marginTop: 16, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+          <h4 style={{ marginTop: 0, marginBottom: 4 }}>{t('channels.credsTitle', { platform: channel.platform })}</h4>
+          <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>{t('channels.credsEditHint')}</div>
+          <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>{t('channels.credsEncrypted')}</div>
+          {credFields.map((f) => (
+            <Field key={f.key} label={t(`channels.cred.${f.key}`)}>
+              <input
+                type={f.type === 'password' ? 'password' : 'text'}
+                value={creds[f.key] ?? ''}
+                onChange={(e) => setCreds((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                placeholder={t('channels.credPlaceholder', { field: t(`channels.cred.${f.key}`) })}
+              />
+            </Field>
+          ))}
+        </div>
+      )}
+
       {error && <div className="error" style={{ marginTop: 8 }}>{error}</div>}
       <div className="row" style={{ marginTop: 16, gap: 8 }}>
         <button className="btn" type="submit" disabled={busy || !name.trim()}>{busy ? '…' : t('channels.save')}</button>

@@ -518,6 +518,7 @@ export const vi = {
   'channels.created': 'Đã tạo kênh',
   'channels.credsTitle': 'Thông tin API / Xác thực — {platform}',
   'channels.credsEncrypted': 'Thông tin được mã hóa AES-256-GCM, không lưu dạng plaintext.',
+  'channels.credsEditHint': 'Để trống nếu không muốn thay đổi thông tin hiện tại.',
   'channels.credPlaceholder': 'Nhập {field}…',
   'channels.cred.appId': 'App ID',
   'channels.cred.appSecret': 'App Secret',
