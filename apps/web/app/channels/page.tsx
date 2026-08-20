@@ -91,6 +91,7 @@ type CredKey =
   | 'appId'
   | 'appSecret'
   | 'pageName'
+  | 'pageId'
   | 'pageAccessToken'
   | 'apiKey'
   | 'clientId'
@@ -109,6 +110,7 @@ const CREDENTIAL_FIELDS: Record<string, { key: CredKey; type?: string }[]> = {
     { key: 'appId' },
     { key: 'appSecret', type: 'password' },
     { key: 'pageName' },
+    { key: 'pageId' },
     { key: 'pageAccessToken', type: 'password' },
   ],
   YOUTUBE: [

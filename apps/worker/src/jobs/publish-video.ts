@@ -1,7 +1,7 @@
 import { mkdir, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { prisma } from '@avf/database';
-import { FacebookProvider, createPlatformProvider, type SocialProvider } from '@avf/social';
+import { FacebookProvider, createPlatformProvider, SocialProviderError, type SocialProvider } from '@avf/social';
 import { SecretCipher } from '@avf/config';
 import type { WorkerContext } from '../context.js';
 import { recordLog, failPublishingJob, shortMessage } from '../lib/status.js';
@@ -21,6 +21,18 @@ interface PublishVideoPayload {
  */
 export function isPublishingFinished(status: string | null | undefined): boolean {
   return status === 'PUBLISHED' || status === 'CANCELLED';
+}
+
+/**
+ * Publishing auth errors (expired/invalid token, missing permission) are
+ * permanent: retrying with the same broken token can never succeed. Return
+ * `false` so the caller swallows the error and finishes the job as FAILED
+ * instead of letting the queue re-deliver it. Transient failures (rate limits,
+ * timeouts, provider 5xx) return `true` so the queue still retries.
+ */
+export function shouldRetryPublishError(err: unknown): boolean {
+  if (err instanceof SocialProviderError && !err.retryable) return false;
+  return true;
 }
 
 /**
@@ -95,11 +107,25 @@ export async function handlePublishVideo(
     } else if (channel?.credentials) {
       const secretCipher = new SecretCipher();
       const creds = JSON.parse(secretCipher.decrypt(channel.credentials)) as Record<string, string>;
-      provider = new FacebookProvider();
       if (channel.platform === 'FACEBOOK') {
+        const fb = new FacebookProvider();
+        provider = fb;
         pageId = creds.pageId ?? '';
         token = creds.pageAccessToken ?? '';
-        destinationName = creds.pageName ?? channel.name;
+        if (!token) throw new Error('Channel credentials are missing a valid access token');
+        // Resolve the page id from the token when it wasn't stored explicitly.
+        if (!pageId) {
+          const me = await fb.me(token);
+          pageId = me.id;
+          destinationName = me.name ?? creds.pageName ?? channel.name;
+          // Persist the resolved page id so future publishes skip the extra call.
+          await prisma.publishingChannel.update({
+            where: { id: channel.id },
+            data: { credentials: secretCipher.encrypt(JSON.stringify({ ...creds, pageId: me.id, pageName: me.name ?? creds.pageName })) },
+          });
+        } else {
+          destinationName = creds.pageName ?? channel.name;
+        }
         platformName = 'FACEBOOK';
       } else {
         token = creds.accessToken ?? Object.values(creds).find((v) => typeof v === 'string' && v.length > 50) ?? '';
@@ -181,6 +207,16 @@ export async function handlePublishVideo(
   } catch (err) {
     const message = shortMessage(err);
     await failPublishingJob(publishingJobId, message);
+
+    // Auth failures (expired/invalid token) will never succeed on retry, so
+    // swallow them and let the job finish as FAILED instead of letting BullMQ
+    // re-enqueue them up to MAX_RETRIES times with the same broken token.
+    // State-changing jobs must still throw so the queue retries transient
+    // failures (rate limits, network timeouts, 5xx).
+    if (!shouldRetryPublishError(err)) {
+      console.error(`[publish-video] ${publishingJobId} non-retryable: ${message}`);
+      return;
+    }
     throw err;
   } finally {
     let cleanup: { removed: boolean; reason?: string };

@@ -9,7 +9,7 @@ import {
   selectTopic,
 } from '@avf/shared';
 import { completeJsonWithPool, buildTopicSuggestionPrompt, GeneratedTopicsSchema } from '@avf/ai';
-import { createPlatformProvider, FacebookTokenCipher } from '@avf/social';
+import { createPlatformProvider, FacebookProvider, FacebookTokenCipher, SocialProviderError } from '@avf/social';
 import { recordProviderUsage } from '@avf/config';
 import { parse, parseId } from '../lib/validate.js';
 import { getAuthUser } from '../plugins/auth.js';
@@ -236,6 +236,53 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
       if (channel.credentials) {
         try {
           const creds = JSON.parse(secretCipher.decrypt(channel.credentials)) as Record<string, string>;
+
+          // Facebook channels get a real Graph API validation: `/me` with the
+          // page access token returns the page itself (id + name) when valid.
+          // This catches expired / invalid / non-page tokens instead of only
+          // checking that the fields are non-empty.
+          if (channel.platform === 'FACEBOOK') {
+            const token = creds.pageAccessToken ?? '';
+            if (!token) {
+              await prisma.publishingChannel.update({
+                where: { id },
+                data: { connectionStatus: 'ERROR', tokenStatus: 'MISSING', lastCheckedAt: new Date() },
+              });
+              return { ok: false, status: 'ERROR', message: 'Page Access Token is missing' };
+            }
+            try {
+              const fb = new FacebookProvider();
+              const me = await fb.me(token);
+              // Persist the resolved page id/name back into the encrypted
+              // credentials so the publish worker can build the /{pageId}/videos
+              // URL without needing a separate FacebookPage record.
+              const resolved = { ...creds, pageId: me.id, pageName: me.name ?? creds.pageName };
+              await prisma.publishingChannel.update({
+                where: { id },
+                data: {
+                  credentials: secretCipher.encrypt(JSON.stringify(resolved)),
+                  connectionStatus: 'CONNECTED',
+                  tokenStatus: 'VALID',
+                  lastCheckedAt: new Date(),
+                },
+              });
+              return { ok: true, status: 'CONNECTED', message: `Connected as ${me.name} (page ${me.id})` };
+            } catch (err) {
+              const isAuth = err instanceof SocialProviderError && err.code === 'AUTH_ERROR';
+              await prisma.publishingChannel.update({
+                where: { id },
+                data: { connectionStatus: 'ERROR', tokenStatus: isAuth ? 'EXPIRED' : 'INVALID', lastCheckedAt: new Date() },
+              });
+              return {
+                ok: false,
+                status: 'ERROR',
+                message: isAuth
+                  ? 'Facebook access token is expired or invalid. Please update the Page Access Token.'
+                  : err instanceof Error ? err.message : 'Facebook token validation failed',
+              };
+            }
+          }
+
           const hasAllKeys = Object.values(creds).every((v) => typeof v === 'string' && v.length > 0);
           const status = hasAllKeys ? 'CONNECTED' : 'ERROR';
           await prisma.publishingChannel.update({

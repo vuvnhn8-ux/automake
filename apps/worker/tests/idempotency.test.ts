@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { isPublishingFinished } from '../src/jobs/publish-video.js';
+import { SocialProviderError } from '@avf/social';
+import { isPublishingFinished, shouldRetryPublishError } from '../src/jobs/publish-video.js';
 
 describe('isPublishingFinished (idempotency guard)', () => {
   it('treats PUBLISHED as finished', () => {
@@ -14,5 +15,24 @@ describe('isPublishingFinished (idempotency guard)', () => {
     for (const status of ['PENDING', 'UPLOADING', 'PROCESSING', 'FAILED', null, undefined]) {
       expect(isPublishingFinished(status)).toBe(false);
     }
+  });
+});
+
+describe('shouldRetryPublishError', () => {
+  it('never retries auth errors (expired/invalid token)', () => {
+    const authError = new SocialProviderError('AUTH_ERROR', 'Session has expired');
+    expect(shouldRetryPublishError(authError)).toBe(false);
+  });
+
+  it('retries transient provider errors', () => {
+    const rateLimit = new SocialProviderError('RATE_LIMIT', 'Too many requests');
+    const timeout = new SocialProviderError('TIMEOUT', 'Request timed out');
+    expect(shouldRetryPublishError(rateLimit)).toBe(true);
+    expect(shouldRetryPublishError(timeout)).toBe(true);
+  });
+
+  it('retries unrelated/unknown errors', () => {
+    expect(shouldRetryPublishError(new Error('database went away'))).toBe(true);
+    expect(shouldRetryPublishError('string error')).toBe(true);
   });
 });

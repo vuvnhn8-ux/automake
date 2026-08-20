@@ -78,31 +78,56 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const requestedPageIds = body.facebookPageIds ?? (body.facebookPageId ? [body.facebookPageId] : []);
-    if (requestedPageIds.length === 0) {
-      return reply.code(400).send({ error: 'validation', message: 'At least one Facebook page is required' });
+    const channelId = body.channelId ?? null;
+
+    if (requestedPageIds.length === 0 && !channelId) {
+      return reply.code(400).send({ error: 'validation', message: 'At least one Facebook page or a channel ID is required' });
+    }
+
+    let pages: { id: string; pageId: string; pageName: string; accessTokenEnc: string }[] = [];
+    if (requestedPageIds.length > 0) {
+      pages = await prisma.facebookPage.findMany({
+        where: { id: { in: requestedPageIds }, userId: auth.id },
+      });
+      if (pages.length === 0) {
+        return reply.code(404).send({ error: 'not_found', message: 'Facebook page not found' });
+      }
+      const foundIds = new Set(pages.map((p) => p.id));
+      const missing = requestedPageIds.filter((pid) => !foundIds.has(pid));
+      if (missing.length > 0) {
+        return reply.code(403).send({ error: 'forbidden', message: 'One or more Facebook pages do not belong to you' });
+      }
     }
     const pageIds = requestedPageIds;
 
-    const pages = await prisma.facebookPage.findMany({
-      where: { id: { in: pageIds }, userId: auth.id },
-    });
-    if (pages.length === 0) {
-      return reply.code(404).send({ error: 'not_found', message: 'Facebook page not found' });
-    }
-    const foundIds = new Set(pages.map((p) => p.id));
-    const missing = pageIds.filter((pid) => !foundIds.has(pid));
-    if (missing.length > 0) {
-      return reply.code(403).send({ error: 'forbidden', message: 'One or more Facebook pages do not belong to you' });
-    }
-
     const scheduledAt = body.scheduledAt ? new Date(body.scheduledAt) : null;
     const createdJobs = [];
-    for (const pageId of pageIds) {
+
+    if (pageIds.length > 0) {
+      for (const pageId of pageIds) {
+        const publishingJob = await prisma.publishingJob.create({
+          data: {
+            videoId: id,
+            facebookPageId: pageId,
+            channelId,
+            scheduledAt,
+            status: 'PENDING',
+          },
+        });
+        createdJobs.push(publishingJob);
+
+        const delayMs = scheduledAt ? Math.max(0, scheduledAt.getTime() - Date.now()) : 0;
+        await container.queue.add('publish-video', {
+          publishingJobId: publishingJob.id,
+          videoId: id,
+          projectId: video.projectId,
+        }, { delayMs });
+      }
+    } else if (channelId) {
       const publishingJob = await prisma.publishingJob.create({
         data: {
           videoId: id,
-          facebookPageId: pageId,
-          channelId: body.channelId ?? null,
+          channelId,
           scheduledAt,
           status: 'PENDING',
         },

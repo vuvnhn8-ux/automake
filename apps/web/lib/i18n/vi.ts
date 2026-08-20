@@ -523,6 +523,7 @@ export const vi = {
   'channels.cred.appId': 'App ID',
   'channels.cred.appSecret': 'App Secret',
   'channels.cred.pageName': 'Tên Page',
+  'channels.cred.pageId': 'Page ID',
   'channels.cred.pageAccessToken': 'Page Access Token',
   'channels.cred.apiKey': 'API Key',
   'channels.cred.clientId': 'Client ID',
