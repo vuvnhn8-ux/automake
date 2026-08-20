@@ -42,7 +42,7 @@ interface VideoDetail {
     }[];
   };
   renderJobs: { id: string; status: string; createdAt: string; log?: string | null; error?: string | null }[];
-  publishingJobs: { id: string; status: string; scheduledAt?: string | null; publishedAt?: string | null; facebookPostId?: string | null; errorMessage?: string | null; facebookPage?: { id: string; pageName: string } | null }[];
+  publishingJobs: { id: string; status: string; scheduledAt?: string | null; publishedAt?: string | null; facebookPostId?: string | null; errorMessage?: string | null; facebookPage?: { id: string; pageName: string } | null; channel?: { id: string; name: string } | null }[];
   project: { id: string; name: string; facebookPage?: { id: string; pageName: string } | null };
 }
 
@@ -219,7 +219,9 @@ export default function VideoDetailPage() {
             <div key={j.id} className="spread" style={{ padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
               <div>
                 <span className={`badge ${badge(j.status)}`}>{j.status}</span>{' '}
-                <span className="muted" style={{ fontSize: 12 }}>{j.facebookPage?.pageName ?? ''}</span>
+                <span className="muted" style={{ fontSize: 12 }}>
+                  {j.channel?.name ?? j.facebookPage?.pageName ?? ''}
+                </span>
                 <div className="mono" style={{ fontSize: 11, marginTop: 4 }}>
                   {j.facebookPostId ? t('vdetail.post', { id: j.facebookPostId }) : j.errorMessage ?? ''}
                 </div>

@@ -39,6 +39,38 @@ export function channelOwnershipWhere(userId: string): Prisma.PublishingChannelW
   return { OR: [{ userId }, { project: { userId } }] };
 }
 
+export const ACTIVE_PUBLISH_STATUSES = ['PENDING', 'UPLOADING', 'PROCESSING'] as const;
+
+export const PUBLISHABLE_VIDEO_STATUSES = ['READY', 'NEEDS_REVIEW'] as const;
+
+export const PublishToChannelSchema = z.object({
+  videoId: z.string().uuid(),
+  scheduledAt: z.string().datetime().optional(),
+  description: z.string().max(2200).optional(),
+  confirm: z.boolean().optional(),
+});
+
+export function isVideoPublishable(status: string | null | undefined): boolean {
+  return status != null && (PUBLISHABLE_VIDEO_STATUSES as readonly string[]).includes(status);
+}
+
+/**
+ * Duplicate protection for manual publish. A video may only have one live job
+ * per channel at a time; a previous successful publish also blocks a new job
+ * unless the caller explicitly confirms a re-publish.
+ */
+export function publishingConflictFor(
+  existing: { status: string }[],
+): 'ACTIVE' | 'PUBLISHED' | null {
+  if (existing.some((j) => (ACTIVE_PUBLISH_STATUSES as readonly string[]).includes(j.status))) {
+    return 'ACTIVE';
+  }
+  if (existing.some((j) => j.status === 'PUBLISHED')) {
+    return 'PUBLISHED';
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Credential masking — credentials are AES-256-GCM encrypted at rest and are
 // never returned by the API. Only a masked preview is ever exposed.

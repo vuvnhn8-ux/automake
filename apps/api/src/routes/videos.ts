@@ -10,7 +10,13 @@ import { getAuthUser } from '../plugins/auth.js';
 const videoDetailInclude = {
   content: { include: { topic: { select: { id: true, name: true } }, scenes: { orderBy: { order: 'asc' as const }, include: { assets: true } } } },
   renderJobs: { orderBy: { createdAt: 'desc' as const } },
-  publishingJobs: { orderBy: { createdAt: 'desc' as const }, include: { facebookPage: { select: { id: true, pageName: true } } } },
+  publishingJobs: {
+    orderBy: { createdAt: 'desc' as const },
+    include: {
+      facebookPage: { select: { id: true, pageName: true } },
+      channel: { select: { id: true, name: true } },
+    },
+  },
   project: { select: { id: true, name: true, facebookPage: { select: { id: true, pageName: true } } } },
 };
 
@@ -42,7 +48,10 @@ export async function videoRoutes(app: FastifyInstance): Promise<void> {
       skip: query.offset,
       include: {
         project: { select: { id: true, name: true } },
-        publishingJobs: { select: { id: true, status: true, scheduledAt: true } },
+        publishingJobs: {
+          select: { id: true, status: true, scheduledAt: true, publishedAt: true },
+          include: { channel: { select: { id: true, name: true } } },
+        },
       },
     });
     return { videos, count: videos.length };

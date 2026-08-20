@@ -8,6 +8,9 @@ import {
   planPublishingJobs,
   expandScheduleTimes,
   type JobDescriptor,
+  publishingConflictFor,
+  isVideoPublishable,
+  PublishToChannelSchema,
 } from '../src/lib/channels.js';
 
 describe('global channel registry — create schema', () => {
@@ -158,6 +161,70 @@ describe('publishing job planning', () => {
     expect(job.contentId).toBe('c1');
     expect(job.channelId).toBe('a1');
     expect(job.platform).toBe('FACEBOOK');
+  });
+});
+
+describe('manual publish — duplicate protection', () => {
+  it('allows publishing when the channel has no prior job for the video', () => {
+    expect(publishingConflictFor([])).toBeNull();
+  });
+
+  it('blocks a new job while a queued/uploading/processing job exists', () => {
+    for (const status of ['PENDING', 'UPLOADING', 'PROCESSING']) {
+      expect(publishingConflictFor([{ status }])).toBe('ACTIVE');
+    }
+  });
+
+  it('reports PUBLISHED so a re-publish requires explicit confirmation', () => {
+    expect(publishingConflictFor([{ status: 'PUBLISHED' }])).toBe('PUBLISHED');
+  });
+
+  it('allows a new job after a FAILED or CANCELLED attempt', () => {
+    expect(publishingConflictFor([{ status: 'FAILED' }])).toBeNull();
+    expect(publishingConflictFor([{ status: 'CANCELLED' }])).toBeNull();
+  });
+
+  it('treats an ACTIVE job as the harder conflict even when a PUBLISHED exists', () => {
+    expect(publishingConflictFor([{ status: 'PUBLISHED' }, { status: 'PENDING' }])).toBe('ACTIVE');
+  });
+});
+
+describe('manual publish — video eligibility', () => {
+  it('only READY / NEEDS_REVIEW videos are publishable', () => {
+    for (const status of ['READY', 'NEEDS_REVIEW']) {
+      expect(isVideoPublishable(status)).toBe(true);
+    }
+    for (const status of ['DRAFT', 'GENERATING', 'RENDERING', 'FAILED', undefined, null]) {
+      expect(isVideoPublishable(status)).toBe(false);
+    }
+  });
+});
+
+describe('manual publish — channel publish schema', () => {
+  it('accepts a publish payload with optional schedule, description and confirm', () => {
+    const result = PublishToChannelSchema.safeParse({
+      videoId: '00000000-0000-4000-8000-000000000001',
+      scheduledAt: '2026-01-01T12:00:00.000Z',
+      description: 'manual publish',
+      confirm: true,
+    });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.confirm).toBe(true);
+    expect(result.data.scheduledAt).toBe('2026-01-01T12:00:00.000Z');
+  });
+
+  it('accepts a minimal videoId-only payload', () => {
+    const result = PublishToChannelSchema.safeParse({ videoId: '00000000-0000-4000-8000-000000000002' });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.scheduledAt).toBeUndefined();
+    expect(result.data.description).toBeUndefined();
+  });
+
+  it('rejects a missing or invalid videoId', () => {
+    expect(PublishToChannelSchema.safeParse({}).success).toBe(false);
+    expect(PublishToChannelSchema.safeParse({ videoId: 'nope' }).success).toBe(false);
   });
 });
 

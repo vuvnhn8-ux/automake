@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import Shell from '@/components/Shell';
+import PublishVideoModal from '@/components/PublishVideoModal';
 import { api } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
 
@@ -289,6 +290,7 @@ export default function ChannelsPage() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [platformFilter, setPlatformFilter] = useState('ALL');
   const [showCreate, setShowCreate] = useState(false);
+  const [publishChannel, setPublishChannel] = useState<Channel | null>(null);
   const [error, setError] = useState('');
 
   const load = () => {
@@ -420,6 +422,9 @@ export default function ChannelsPage() {
                     </td>
                     <td>
                       <div className="wrap" style={{ gap: 6 }}>
+                        <button className="btn small" onClick={() => setPublishChannel(c)} disabled={!c.isActive}>
+                          {t('channels.publishVideo')}
+                        </button>
                         <Link href={`/channels/${c.id}`} className="btn small secondary">{t('channels.details')}</Link>
                         <TestButton channel={c} onDone={load} />
                       </div>
@@ -428,13 +433,22 @@ export default function ChannelsPage() {
                 ))}
                 {visible.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="muted">{t('channels.noChannels')}</td>
+                    <td colSpan={10} className="muted">{t('channels.noChannels')}</td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
         </>
+      )}
+
+      {publishChannel && (
+        <PublishVideoModal
+          channelId={publishChannel.id}
+          channelName={publishChannel.name}
+          onClose={() => setPublishChannel(null)}
+          onPublished={load}
+        />
       )}
     </Shell>
   );

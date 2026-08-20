@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import Shell from '@/components/Shell';
+import PublishVideoModal from '@/components/PublishVideoModal';
 import { api } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
 
@@ -95,6 +96,7 @@ export default function ChannelDetailPage() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [editing, setEditing] = useState(false);
+  const [publishing, setPublishing] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(() => {
@@ -154,6 +156,9 @@ export default function ChannelDetailPage() {
           </div>
         </div>
         <div className="wrap" style={{ gap: 8 }}>
+          <button className="btn small" disabled={!channel.isActive || busy} onClick={() => setPublishing(true)}>
+            {t('channels.publishVideo')}
+          </button>
           <span className={connectionClass(channel.connectionStatus)}>
             {channel.connectionStatus ?? t('channels.neverTested')}
           </span>
@@ -303,6 +308,15 @@ export default function ChannelDetailPage() {
           )}
         </div>
       </div>
+
+      {publishing && (
+        <PublishVideoModal
+          channelId={channel.id}
+          channelName={channel.name}
+          onClose={() => setPublishing(false)}
+          onPublished={load}
+        />
+      )}
     </Shell>
   );
 }

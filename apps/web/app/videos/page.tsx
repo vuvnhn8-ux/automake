@@ -17,7 +17,7 @@ interface Video {
   createdAt: string;
   publishedAt?: string | null;
   project: { id: string; name: string };
-  publishingJobs: { id: string; status: string; scheduledAt?: string | null }[];
+  publishingJobs: { id: string; status: string; scheduledAt?: string | null; channel: { id: string; name: string } | null }[];
 }
 
 export default function VideosPage() {
@@ -80,7 +80,11 @@ export default function VideosPage() {
                   <span className={`badge ${badge(v.status)}`}>{v.status}</span>
                   {v.publishingJobs.map((j) => (
                     <div key={j.id} className="mono" style={{ marginTop: 2 }}>
-                      {t('videos.post')} <span className={`badge ${badge(j.status)}`}>{j.status}</span>
+                      {t('videos.post')}{' '}
+                      <span className={`badge ${badge(j.status)}`}>{j.status}</span>
+                      {j.channel?.name && (
+                        <span className="muted" style={{ fontSize: 11 }}> · {j.channel.name}</span>
+                      )}
                     </div>
                   ))}
                 </td>

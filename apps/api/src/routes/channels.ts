@@ -21,6 +21,10 @@ import {
   ConnectChannelSchema,
   channelOwnershipWhere,
   toPublicChannel,
+  isVideoPublishable,
+  publishingConflictFor,
+  PublishToChannelSchema,
+  PUBLISHABLE_VIDEO_STATUSES,
 } from '../lib/channels.js';
 import { SecretCipher } from '@avf/config';
 
@@ -344,6 +348,140 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
         message: err instanceof Error ? err.message : 'Connection test failed',
       };
     }
+  });
+
+  // -------------------------------------------------------------------------
+  // Manual publish (per channel × video)
+  // -------------------------------------------------------------------------
+
+  // List videos that are ready to publish, each annotated with the latest
+  // publishing status *for this channel* so the UI can show whether the video
+  // was already published / queued / failed on this specific channel.
+  app.get('/channels/:id/publishable-videos', async (request, reply) => {
+    const auth = getAuthUser(request);
+    const id = parseId((request.params as { id: string }).id);
+    await getChannel(auth.id, id);
+    const query = parse(
+      z.object({
+        status: z.string().optional(),
+        limit: z.coerce.number().int().max(200).default(100),
+      }),
+      request.query,
+    );
+    const videos = await prisma.video.findMany({
+      where: {
+        project: { userId: auth.id },
+        status: query.status === 'ALL' ? undefined : { in: [...PUBLISHABLE_VIDEO_STATUSES] },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: query.limit,
+      include: {
+        project: { select: { id: true, name: true } },
+        content: { select: { id: true, title: true } },
+        publishingJobs: {
+          where: { channelId: id },
+          orderBy: { createdAt: 'desc' as const },
+          take: 1,
+          select: {
+            id: true,
+            status: true,
+            scheduledAt: true,
+            publishedAt: true,
+            facebookPostId: true,
+            errorMessage: true,
+          },
+        },
+      },
+    });
+    return {
+      videos: videos.map((v) => ({
+        id: v.id,
+        title: v.content?.title ?? v.title,
+        status: v.status,
+        createdAt: v.createdAt,
+        project: v.project,
+        channelPublishing: v.publishingJobs[0] ?? null,
+      })),
+    };
+  });
+
+  // Publish one video to this channel. Duplicate protection: a job that is
+  // still QUEUED/UPLOADING/PROCESSING or already PUBLISHED blocks a new job
+  // unless the caller explicitly confirms a re-publish of a published video.
+  app.post('/channels/:id/publish', async (request, reply) => {
+    const auth = getAuthUser(request);
+    const id = parseId((request.params as { id: string }).id);
+    const channel = await getChannel(auth.id, id);
+    const body = parse(PublishToChannelSchema, request.body);
+
+    if (!channel.isActive) {
+      return reply.code(400).send({ error: 'channel_inactive', message: 'Channel is disabled' });
+    }
+    const hasDestination = Boolean(
+      channel.credentials || channel.facebookPage?.accessTokenEnc || channel.publishingAccount?.credentials,
+    );
+    if (!hasDestination) {
+      return reply.code(400).send({ error: 'no_destination', message: 'Channel has no publishing credentials configured' });
+    }
+
+    const video = await prisma.video.findFirst({
+      where: { id: body.videoId, project: { userId: auth.id } },
+      include: { content: true },
+    });
+    if (!video) {
+      return reply.code(404).send({ error: 'not_found', message: 'Video not found' });
+    }
+    if (!isVideoPublishable(video.status)) {
+      return reply.code(400).send({ error: 'invalid_state', message: 'Video is not ready to publish' });
+    }
+
+    const existing = await prisma.publishingJob.findMany({
+      where: {
+        videoId: video.id,
+        channelId: id,
+        status: { in: ['PENDING', 'UPLOADING', 'PROCESSING', 'PUBLISHED'] },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 1,
+    });
+    const conflict = publishingConflictFor(existing);
+    if (conflict === 'ACTIVE') {
+      return reply.code(409).send({
+        error: 'already_active',
+        message: 'This video already has an active publishing job on this channel',
+        publishingJob: existing[0],
+      });
+    }
+    if (conflict === 'PUBLISHED' && !body.confirm) {
+      return reply.code(409).send({
+        error: 'already_published',
+        message: 'This video is already published on this channel',
+        publishingJob: existing[0],
+      });
+    }
+
+    const scheduledAt = body.scheduledAt ? new Date(body.scheduledAt) : null;
+    const publishingJob = await prisma.publishingJob.create({
+      data: {
+        videoId: video.id,
+        projectId: video.projectId,
+        contentId: video.contentId,
+        channelId: id,
+        platform: channel.platform,
+        scheduledAt,
+        status: 'PENDING',
+        descriptionOverride: body.description,
+      },
+    });
+
+    const delayMs = scheduledAt ? Math.max(0, scheduledAt.getTime() - Date.now()) : 0;
+    await container.queue.add('publish-video', {
+      publishingJobId: publishingJob.id,
+      videoId: video.id,
+      projectId: video.projectId,
+    }, { delayMs });
+
+    return reply.code(201).send({ publishingJob });
   });
 
   // Channels selected by a project (selection only — projects never create).
