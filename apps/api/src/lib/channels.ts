@@ -98,6 +98,47 @@ export function toPublicChannel<
   };
 }
 
+/** Non-secret fields that are safe to return to clients. */
+export interface CredentialsSummary {
+  appId?: string;
+  pageName?: string;
+  pageId?: string;
+}
+
+/**
+ * Builds a summary from an already-decrypted credentials object. Only the
+ * non-secret Facebook identity fields (appId / pageName / pageId) are exposed;
+ * tokens and appSecrets are intentionally omitted.
+ */
+export function credentialsSummaryFrom(creds: Record<string, string> | undefined): CredentialsSummary | null {
+  if (!creds) return null;
+  const summary: CredentialsSummary = {};
+  for (const key of ['appId', 'pageName', 'pageId'] as const) {
+    const value = creds[key];
+    if (typeof value === 'string' && value.trim().length > 0) summary[key] = value;
+  }
+  return Object.keys(summary).length > 0 ? summary : null;
+}
+
+/**
+ * Merges an incoming credentials patch over existing stored credentials.
+ * A field is only overwritten when it carries a non-empty value; omitted or
+ * blank fields keep the previously stored value (so editing pageId/appId alone
+ * never wipes the stored appSecret / pageAccessToken).
+ */
+export function mergeCredentials(
+  existing: Record<string, string> | undefined,
+  incoming: Record<string, unknown> | undefined,
+): Record<string, string> {
+  const merged: Record<string, string> = { ...(existing ?? {}) };
+  if (incoming) {
+    for (const [key, value] of Object.entries(incoming)) {
+      if (typeof value === 'string' && value.trim().length > 0) merged[key] = value;
+    }
+  }
+  return merged;
+}
+
 // ---------------------------------------------------------------------------
 // Publishing-job planning. One finished video fans out to every enabled
 // destination: SAME_CONTENT reuses the video for each channel (one job per

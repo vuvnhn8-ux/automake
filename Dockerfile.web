@@ -12,6 +12,8 @@ RUN npm install
 FROM node:22-alpine AS builder
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
+# Limit heap to avoid OOM on low-RAM VPS (950 MB).
+ENV NODE_OPTIONS="--max-old-space-size=480"
 # Inlined into the bundle at build time; set via docker build --build-arg or
 # docker-compose build.args. Defaults to localhost for local compose runs.
 ARG NEXT_PUBLIC_API_URL=http://localhost:4000

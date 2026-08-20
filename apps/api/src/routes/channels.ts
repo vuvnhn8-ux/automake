@@ -25,6 +25,9 @@ import {
   publishingConflictFor,
   PublishToChannelSchema,
   PUBLISHABLE_VIDEO_STATUSES,
+  credentialsSummaryFrom,
+  mergeCredentials,
+  type CredentialsSummary,
 } from '../lib/channels.js';
 import { SecretCipher } from '@avf/config';
 
@@ -212,7 +215,21 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
       },
       include: channelDetailInclude,
     });
-    return reply.code(201).send({ channel: toPublicChannel(channel) });
+    const publicView = toPublicChannel(channel);
+    let credentialsSummaryNew: CredentialsSummary | null = null;
+    if (encryptedCredentials && channel.platform === 'FACEBOOK') {
+      try {
+        credentialsSummaryNew = credentialsSummaryFrom(JSON.parse(new SecretCipher().decrypt(encryptedCredentials)));
+      } catch {
+        credentialsSummaryNew = null;
+      }
+    }
+    return reply.code(201).send({
+      channel: {
+        ...publicView,
+        credentialsSummary: credentialsSummaryNew,
+      },
+    });
   });
 
   // Test the connection/credentials of a channel and record the outcome.
@@ -524,14 +541,25 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
     if (!channel) {
       return reply.code(404).send({ error: 'not_found', message: 'Channel not found' });
     }
-    // Never expose encrypted credentials — only a masked preview.
+    // Never expose encrypted credentials — only a masked preview plus the
+    // non-secret identity fields (appId / pageName / pageId) so the edit form
+    // can be re-hydrated without ever sending tokens back to clients.
     const { credentials: _rawCreds, ...channelSafe } = channel;
     const hasCreds = Boolean(_rawCreds);
+    let credentialsSummary: CredentialsSummary | null = null;
+    if (hasCreds && channel.platform === 'FACEBOOK') {
+      try {
+        credentialsSummary = credentialsSummaryFrom(JSON.parse(new SecretCipher().decrypt(_rawCreds!)));
+      } catch {
+        credentialsSummary = null;
+      }
+    }
     return {
       channel: {
         ...channelSafe,
         hasCredentials: hasCreds,
         credentialsMask: hasCreds ? '••••••••' : '',
+        credentialsSummary,
         facebookPage: channel.facebookPage
           ? toPublicChannel(channel.facebookPage)
           : null,
@@ -545,9 +573,9 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
   app.patch('/channels/:id', async (request, reply) => {
     const auth = getAuthUser(request);
     const id = parseId((request.params as { id: string }).id);
-    await getChannel(auth.id, id);
+    const existing = await getChannel(auth.id, id);
     const body = parse(UpdateChannelSchema, request.body);
-    const { facebookPageId, publishingAccountId, ...rest } = body;
+    const { facebookPageId, publishingAccountId, credentials: _bodyCredentials, ...rest } = body;
     if (facebookPageId) {
       const page = await prisma.facebookPage.findFirst({ where: { id: facebookPageId, userId: auth.id } });
       if (!page) {
@@ -562,11 +590,24 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(404).send({ error: 'not_found', message: 'Publishing account not found' });
       }
     }
+    // Merge incoming credentials over the stored ones: only non-empty fields
+    // overwrite the previous value, so editing pageId/name alone never wipes
+    // the stored appSecret / pageAccessToken. A blank upload is treated as
+    // "keep the existing secret".
     let encryptedCredentials: string | undefined;
     if (body.credentials !== undefined) {
-      if (body.credentials && Object.keys(body.credentials).length > 0) {
-        const cipher = new SecretCipher();
-        encryptedCredentials = cipher.encrypt(JSON.stringify(body.credentials));
+      const cipher = new SecretCipher();
+      let stored: Record<string, string> = {};
+      if (existing.credentials) {
+        try {
+          stored = JSON.parse(cipher.decrypt(existing.credentials));
+        } catch {
+          stored = {};
+        }
+      }
+      const merged = mergeCredentials(stored, body.credentials);
+      if (Object.keys(merged).length > 0) {
+        encryptedCredentials = cipher.encrypt(JSON.stringify(merged));
       } else {
         encryptedCredentials = undefined;
       }
@@ -577,8 +618,25 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
       ...(body.publishingAccountId !== undefined ? { publishingAccount: publishingAccountId ? { connect: { id: publishingAccountId } } : { disconnect: true } } : {}),
       ...(encryptedCredentials !== undefined ? { credentials: encryptedCredentials } : {}),
     };
-    const channel = await prisma.publishingChannel.update({ where: { id }, data, include: channelDetailInclude });
-    return { channel };
+    const updated = await prisma.publishingChannel.update({ where: { id }, data, include: channelDetailInclude });
+    const { credentials: _rawCredsAfter, ...channelSafe } = updated;
+    const hasCredsAfter = Boolean(_rawCredsAfter);
+    let credentialsSummaryAfter: CredentialsSummary | null = null;
+    if (hasCredsAfter && updated.platform === 'FACEBOOK') {
+      try {
+        credentialsSummaryAfter = credentialsSummaryFrom(JSON.parse(new SecretCipher().decrypt(_rawCredsAfter!)));
+      } catch {
+        credentialsSummaryAfter = null;
+      }
+    }
+    return {
+      channel: {
+        ...channelSafe,
+        hasCredentials: hasCredsAfter,
+        credentialsMask: hasCredsAfter ? '••••••••' : '',
+        credentialsSummary: credentialsSummaryAfter,
+      },
+    };
   });
 
   app.delete('/channels/:id', async (request, reply) => {

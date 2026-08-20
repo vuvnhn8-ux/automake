@@ -522,6 +522,7 @@ export const en: Dict = {
   'channels.credsEncrypted': 'Credentials are encrypted with AES-256-GCM and never stored as plaintext.',
   'channels.credsEditHint': 'Leave blank to keep current credentials.',
   'channels.credPlaceholder': 'Enter {field}…',
+  'channels.credSaved': 'Saved {field} — leave blank to keep',
   'channels.cred.appId': 'App ID',
   'channels.cred.appSecret': 'App Secret',
   'channels.cred.pageName': 'Page name',

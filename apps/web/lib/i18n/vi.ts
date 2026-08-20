@@ -520,6 +520,7 @@ export const vi = {
   'channels.credsEncrypted': 'Thông tin được mã hóa AES-256-GCM, không lưu dạng plaintext.',
   'channels.credsEditHint': 'Để trống nếu không muốn thay đổi thông tin hiện tại.',
   'channels.credPlaceholder': 'Nhập {field}…',
+  'channels.credSaved': '{field} đã lưu — để trống để giữ nguyên',
   'channels.cred.appId': 'App ID',
   'channels.cred.appSecret': 'App Secret',
   'channels.cred.pageName': 'Tên Page',

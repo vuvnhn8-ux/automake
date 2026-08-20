@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import Shell from '@/components/Shell';
@@ -56,6 +56,9 @@ interface Channel {
   connectionStatus: string | null;
   tokenStatus: string | null;
   lastCheckedAt: string | null;
+  hasCredentials?: boolean;
+  credentialsMask?: string;
+  credentialsSummary?: { appId?: string; pageName?: string; pageId?: string } | null;
   facebookPage: Destination | null;
   publishingAccount: Destination | null;
   projectAssignments: Assignment[];
@@ -386,7 +389,32 @@ function EditCard({ channel, onCancel, onSaved }: { channel: Channel; onCancel: 
   const [isActive, setIsActive] = useState(channel.isActive);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [creds, setCreds] = useState<Record<string, string>>({});
+  // Pre-fill the non-secret identity fields returned by the API so the form
+  // is re-hydrated after reload. Secrets are never echoed back to the client.
+  const [creds, setCreds] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {};
+    const summary = channel.credentialsSummary;
+    if (summary?.appId) init.appId = summary.appId;
+    if (summary?.pageName) init.pageName = summary.pageName;
+    if (summary?.pageId) init.pageId = summary.pageId;
+    return init;
+  });
+
+  // Re-sync creds from the channel prop when it changes (e.g. after a load()
+  // completes with fresher data). Only updates fields that the user has NOT
+  // touched — so typing a token and then a background refresh won't lose it.
+  const touchedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const summary = channel.credentialsSummary;
+    if (!summary) return;
+    setCreds((prev) => {
+      const next = { ...prev };
+      for (const key of ['appId', 'pageName', 'pageId'] as const) {
+        if (!touchedRef.current.has(key) && summary[key]) next[key] = summary[key];
+      }
+      return next;
+    });
+  }, [channel.credentialsSummary]);
 
   const credFields = CREDENTIAL_FIELDS[channel.platform] ?? [];
   const hasCredChanges = credFields.some((f) => creds[f.key]?.trim());
@@ -405,7 +433,15 @@ function EditCard({ channel, onCancel, onSaved }: { channel: Channel; onCancel: 
         isActive,
       };
       if (hasCredChanges) {
-        body.credentials = creds;
+        // Drop blank fields so an untouched token/appSecret is never sent as
+        // an empty string (which could wipe the stored secret on the backend).
+        const credsToSend: Record<string, string> = {};
+        for (const [key, value] of Object.entries(creds)) {
+          if (value.trim()) credsToSend[key] = value;
+        }
+        if (Object.keys(credsToSend).length > 0) {
+          body.credentials = credsToSend;
+        }
       }
       await api(`/api/channels/${channel.id}`, {
         method: 'PATCH',
@@ -453,16 +489,25 @@ function EditCard({ channel, onCancel, onSaved }: { channel: Channel; onCancel: 
           <h4 style={{ marginTop: 0, marginBottom: 4 }}>{t('channels.credsTitle', { platform: channel.platform })}</h4>
           <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>{t('channels.credsEditHint')}</div>
           <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>{t('channels.credsEncrypted')}</div>
-          {credFields.map((f) => (
-            <Field key={f.key} label={t(`channels.cred.${f.key}`)}>
-              <input
-                type={f.type === 'password' ? 'password' : 'text'}
-                value={creds[f.key] ?? ''}
-                onChange={(e) => setCreds((prev) => ({ ...prev, [f.key]: e.target.value }))}
-                placeholder={t('channels.credPlaceholder', { field: t(`channels.cred.${f.key}`) })}
-              />
-            </Field>
-          ))}
+          {credFields.map((f) => {
+            const hasSavedValue = Boolean(channel.hasCredentials && (f.type === 'password' ? true : creds[f.key]));
+            const placeholder = hasSavedValue
+              ? t('channels.credSaved', { field: t(`channels.cred.${f.key}`) })
+              : t('channels.credPlaceholder', { field: t(`channels.cred.${f.key}`) });
+            return (
+              <Field key={f.key} label={t(`channels.cred.${f.key}`)}>
+                <input
+                  type={f.type === 'password' ? 'password' : 'text'}
+                  value={creds[f.key] ?? ''}
+                  onChange={(e) => {
+                    touchedRef.current.add(f.key);
+                    setCreds((prev) => ({ ...prev, [f.key]: e.target.value }));
+                  }}
+                  placeholder={placeholder}
+                />
+              </Field>
+            );
+          })}
         </div>
       )}
 

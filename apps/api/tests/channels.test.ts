@@ -11,6 +11,8 @@ import {
   publishingConflictFor,
   isVideoPublishable,
   PublishToChannelSchema,
+  credentialsSummaryFrom,
+  mergeCredentials,
 } from '../src/lib/channels.js';
 
 describe('global channel registry — create schema', () => {
@@ -101,6 +103,48 @@ describe('global channel registry — credential masking', () => {
     });
     expect(accountView).not.toHaveProperty('credentials');
     expect(accountView.hasCredentials).toBe(true);
+  });
+});
+
+describe('credential merging (PATCH safety)', () => {
+  it('keeps existing secrets when incoming fields are omitted or blank', () => {
+    const existing = { appId: '123', appSecret: 'sec', pageName: 'P', pageId: '1', pageAccessToken: 'tok' };
+    const merged = mergeCredentials(existing, { pageId: '2', pageAccessToken: '' });
+    expect(merged.pageId).toBe('2');
+    expect(merged.pageAccessToken).toBe('tok');
+    expect(merged.appSecret).toBe('sec');
+  });
+
+  it('overwrites a secret only when a non-empty new value is provided', () => {
+    const existing = { appId: '123', pageAccessToken: 'old-tok' };
+    const merged = mergeCredentials(existing, { pageAccessToken: 'new-tok' });
+    expect(merged.pageAccessToken).toBe('new-tok');
+  });
+
+  it('starts a fresh record from the incoming patch when nothing existed', () => {
+    const merged = mergeCredentials(undefined, { pageId: 'x', pageName: 'P' });
+    expect(merged).toEqual({ pageId: 'x', pageName: 'P' });
+  });
+
+  it('returns only scaled fields chosen by the caller (no secrets)', () => {
+    const merged = mergeCredentials(undefined, { appId: 'a', appSecret: 's', pageAccessToken: 't' });
+    expect(merged.appSecret).toBe('s');
+    expect(merged.pageAccessToken).toBe('t');
+    const summary = credentialsSummaryFrom(merged);
+    expect(summary).toEqual({ appId: 'a' });
+  });
+});
+
+describe('credential summary exposure', () => {
+  it('exposes only appId/pageName/pageId and ignores blanks', () => {
+    const summary = credentialsSummaryFrom({ appId: 'a', appSecret: 's', pageName: '', pageId: 'p', pageAccessToken: 't' });
+    expect(summary).toEqual({ appId: 'a', pageId: 'p' });
+  });
+
+  it('returns null for empty input objects', () => {
+    expect(credentialsSummaryFrom(undefined)).toBeNull();
+    expect(credentialsSummaryFrom({})).toBeNull();
+    expect(credentialsSummaryFrom({ pageAccessToken: 't' })).toBeNull();
   });
 });
 
@@ -264,5 +308,90 @@ describe('schedule expansion', () => {
     expect(slots).toHaveLength(2);
     expect(slots[0]!.getUTCHours()).toBe(9);
     expect(slots[1]!.getUTCHours()).toBe(18);
+  });
+});
+
+describe('credential save/persist regression', () => {
+  it('A: save all new credentials from scratch', () => {
+    const merged = mergeCredentials(undefined, {
+      appId: 'app123',
+      appSecret: 'secret456',
+      pageName: 'My Page',
+      pageId: 'page789',
+      pageAccessToken: 'tok_abc',
+    });
+    expect(merged).toEqual({
+      appId: 'app123',
+      appSecret: 'secret456',
+      pageName: 'My Page',
+      pageId: 'page789',
+      pageAccessToken: 'tok_abc',
+    });
+    const summary = credentialsSummaryFrom(merged);
+    expect(summary).toEqual({ appId: 'app123', pageName: 'My Page', pageId: 'page789' });
+  });
+
+  it('B: save pageId/pageName but keep token + appSecret', () => {
+    const existing = {
+      appId: 'app123',
+      appSecret: 'old_secret',
+      pageName: 'Old Name',
+      pageId: 'old_page',
+      pageAccessToken: 'old_token',
+    };
+    const merged = mergeCredentials(existing, { pageId: 'new_page', pageName: 'New Name' });
+    expect(merged.appSecret).toBe('old_secret');
+    expect(merged.pageAccessToken).toBe('old_token');
+    expect(merged.pageId).toBe('new_page');
+    expect(merged.pageName).toBe('New Name');
+    expect(merged.appId).toBe('app123');
+    const summary = credentialsSummaryFrom(merged);
+    expect(summary).toEqual({ appId: 'app123', pageName: 'New Name', pageId: 'new_page' });
+  });
+
+  it('C: empty secret inputs do not wipe existing secrets', () => {
+    const existing = {
+      appId: 'app123',
+      appSecret: 'real_secret',
+      pageName: 'My Page',
+      pageId: 'page789',
+      pageAccessToken: 'real_token',
+    };
+    const merged = mergeCredentials(existing, {
+      appId: 'app123',
+      pageName: 'My Page',
+      pageId: 'page789',
+      pageAccessToken: '',
+      appSecret: '',
+    });
+    expect(merged.pageAccessToken).toBe('real_token');
+    expect(merged.appSecret).toBe('real_secret');
+  });
+
+  it('D: credentialsSummary returns exactly appId/pageName/pageId', () => {
+    const merged = {
+      appId: 'app123',
+      appSecret: 'secret',
+      pageName: 'My Page',
+      pageId: 'page789',
+      pageAccessToken: 'tok',
+    };
+    const summary = credentialsSummaryFrom(merged);
+    expect(summary).toEqual({ appId: 'app123', pageName: 'My Page', pageId: 'page789' });
+    expect(summary).not.toHaveProperty('appSecret');
+    expect(summary).not.toHaveProperty('pageAccessToken');
+  });
+
+  it('E: summary preserves pageId/pageName after token-only update', () => {
+    const existing = {
+      appId: 'app123',
+      appSecret: 'secret',
+      pageName: 'My Page',
+      pageId: 'page789',
+      pageAccessToken: 'old_token',
+    };
+    const merged = mergeCredentials(existing, { pageAccessToken: 'new_token' });
+    const summary = credentialsSummaryFrom(merged);
+    expect(summary).toEqual({ appId: 'app123', pageName: 'My Page', pageId: 'page789' });
   });
 });
