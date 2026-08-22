@@ -10,7 +10,7 @@ import {
 } from '@avf/shared';
 import { completeJsonWithPool, buildTopicSuggestionPrompt, GeneratedTopicsSchema } from '@avf/ai';
 import { createPlatformProvider, FacebookProvider, FacebookTokenCipher, SocialProviderError } from '@avf/social';
-import { recordProviderUsage } from '@avf/config';
+import { recordProviderUsage, env } from '@avf/config';
 import { parse, parseId } from '../lib/validate.js';
 import { getAuthUser } from '../plugins/auth.js';
 import { getChannel, getSeries, getKnowledge, getSeriesTopic, getProject } from '../lib/access.js';
@@ -282,6 +282,46 @@ export async function channelRoutes(app: FastifyInstance): Promise<void> {
                 where: { id },
                 data: {
                   credentials: secretCipher.encrypt(JSON.stringify(resolved)),
+                },
+              });
+
+              // Check publish permissions via debug_token (granular_scopes).
+              // A token can list pages_manage_posts in "scopes" but lack it in
+              // "granular_scopes" — Facebook v21+ only respects granular_scopes.
+              const debugRes = await fetch(
+                `https://graph.facebook.com/${env.FACEBOOK_GRAPH_VERSION}/debug_token?input_token=${token}&access_token=${token}`,
+              );
+              const debugBody = await debugRes.json() as {
+                data?: { scopes?: string[]; granular_scopes?: { scope: string }[] };
+              };
+              const granularScopes =
+                debugBody.data?.granular_scopes?.map((g) => g.scope) ?? [];
+              const missingPublishPerms =
+                !granularScopes.includes('pages_manage_posts') ||
+                !granularScopes.includes('pages_read_engagement');
+
+              if (missingPublishPerms) {
+                const missing: string[] = [];
+                if (!granularScopes.includes('pages_manage_posts')) missing.push('pages_manage_posts');
+                if (!granularScopes.includes('pages_read_engagement')) missing.push('pages_read_engagement');
+                await prisma.publishingChannel.update({
+                  where: { id },
+                  data: {
+                    connectionStatus: 'ERROR',
+                    tokenStatus: 'INSUFFICIENT_SCOPE',
+                    lastCheckedAt: new Date(),
+                  },
+                });
+                return {
+                  ok: false,
+                  status: 'ERROR',
+                  message: `Token is valid but missing publish permissions: ${missing.join(', ')}. Re-authorize the Facebook app with pages_manage_posts scope.`,
+                };
+              }
+
+              await prisma.publishingChannel.update({
+                where: { id },
+                data: {
                   connectionStatus: 'CONNECTED',
                   tokenStatus: 'VALID',
                   lastCheckedAt: new Date(),

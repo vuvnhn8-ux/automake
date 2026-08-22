@@ -26,6 +26,7 @@ packages/database/src/generated/
 *.pfx
 credentials*
 secrets*
+secret.txt
 tokens*
 *.sqlite
 *.sqlite3

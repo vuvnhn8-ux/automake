@@ -25,11 +25,13 @@ function throwGraphError(resource: string, status: number, body: string): never 
     /* keep empty */
   }
   const fbCode = parsed.error?.code;
+  const fbSubcode = parsed.error?.error_subcode;
   const message = parsed.error?.message ?? body.slice(0, 300);
   let code: SocialProviderError['code'] = 'PROVIDER_ERROR';
   if (status === 401 || status === 403) code = 'AUTH_ERROR';
   if (status === 429) code = 'RATE_LIMIT';
   if (fbCode === 190) code = 'AUTH_ERROR'; // token expired/invalid
+  if (fbCode === 100 || fbCode === 200) code = 'AUTH_ERROR'; // permission denied / missing permission
   if (fbCode === 4 || fbCode === 17) code = 'RATE_LIMIT'; // rate limits
   if (fbCode === 613) code = 'TIMEOUT';
   throw new SocialProviderError(code, `${resource}: ${message}`, { fbErrorCode: fbCode });
